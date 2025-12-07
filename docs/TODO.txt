@@ -1,0 +1,30 @@
+TODO:
+- Zamienić w parserze z matchowania po wariantach:
+  - teleport (warianty):
+    - teleport <player>
+    - teleport <player> <block_pos>
+    - teleport <player> <player>
+    ....
+  - tylko zrobić
+    teleport (tylko po 1 następnym argumeńcie (CmdNode)):
+    - teleport <player>
+    - teleport <block_pos>
+    - teleport ....
+    
+    - i np mamy <player> to:
+      - teleport <player> ...
+      - teleport <player> ...
+
+
+
+Skład Commands.json
+
+CmdNode("execute", type="literal")
+ ├─ children["align"] → CmdNode("align", type="literal")
+ │   └─ children["axes"] → CmdNode("axes", type="argument", parser="minecraft:swizzle", redirect=["execute"])
+ ├─ children["anchored"] → CmdNode("anchored", type="literal")
+ │   └─ children["anchor"] → CmdNode("anchor", type="argument", parser="minecraft:entity_anchor", redirect=["execute"])
+ ├─ children["as"] → CmdNode("as", type="literal")
+ │   └─ children["targets"] → CmdNode("targets", type="argument", parser="minecraft:entity", properties={...}, redirect=["execute"])
+ ...
+ └─ children["run"] → CmdNode("run", type="literal", executable=true?)
