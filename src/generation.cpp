@@ -5,83 +5,82 @@
 #include <vector>
 #include <sstream>
 
-#include "./parser.cpp"
+#include "./ast.hpp"
 
-// template for visitors
-template<class... Ts> struct overloaded : Ts... { using Ts::operator()...; };
-template<class... Ts> overloaded(Ts...)->overloaded<Ts...>;
-
-class Generator {
+class Generator : public ASTVisitor {
 public:
-    explicit Generator(const NodeProg& prog)
-        : m_prog(prog)
-    {}
 
-    // generowanie całego programu
-    std::string gen_prog() {
+    std::string generate(const std::vector<ASTNode>& root) {
         m_output.str("");
         m_output.clear();
-
-        for (const NodeStmt& stmt : m_prog.stmts) {
-            gen_stmt(stmt, m_output);
+        
+        // Użyj visitor pattern do generacji kodu
+        for (const ASTNode& node : root) {
+            apply_visitor(node, *this);
         }
         return m_output.str();
     }
 
-private:
-    const NodeProg& m_prog;
-    std::stringstream m_output;
-
-    // --- helpers ---
-    static std::string gen_expr(const NodeExpr& expr) {
-        return std::visit(overloaded {
-            [](const NodeExprIntLit& e) {
-                return e.int_lit.value.value();
-            },
-            [](const NodeExprIdent& e) {
-                return e.ident.value.value();
-            }
-        }, expr.var);
+    // Implementacje metod visitora
+    void visit_command(const CommandData& cmd) override {
+        m_output << cmd.cmd.value.value_or("cmmd");
+        
+        for (const auto& arg : cmd.args) {
+            m_output << " ";
+            apply_visitor(arg, *this);  // Rekurencyjnie generuj argumenty
+        }
+        m_output << "\n";
     }
 
-    static void gen_stmt(const NodeStmt& stmt, std::ostream& out) {
-        std::visit(overloaded {
-            [&](const NodeStmtVar& s) {
-                emitVar(s, out);
-            },            
-            [&](const NodeStmtCommand& c) {
-                emitCommand(c, out);
-            }
-        }, stmt.var);
+    void visit_vardecl(const VarDeclData& decl) override {
+        std::string varName = decl.name.value.value_or("");
+        
+        // Zapisujemy zmienną w mapie
+        if (decl.value) {
+            std::stringstream ss;
+            Generator tempGen;
+            apply_visitor(*(decl.value), tempGen);
+            m_variables[varName] = tempGen.getOutput();
+        }
+        
+        // Generujemy komendę
+        m_output << "# " << varName << " = ";
+        if (decl.value) {
+            apply_visitor(*(decl.value), *this);
+        } else {
+            m_output << "0";
+        }
+        m_output << "\n";
     }
-
-    static void emitCommand(const NodeStmtCommand& cmd, std::ostream& out) {
-        // command_name token value
-        std::string name = cmd.command_name.value.value_or(std::string{});
-        out << name;
-        for (const auto &arg : cmd.args) {
-            out << " ";
-            // emit depending on token type; if string_lit we may need quotes
-            if (arg.token.type == TokenType::string_lit) {
-                // add quotes around raw token value if tokenizer returned unquoted value
-                out << '"' << arg.token.value.value() << '"';
-            } else if (arg.token.type == TokenType::asterisk) {
-                out << '*';
-            } else {
-                // for ident/int_lit/selector use raw token text
-                if (!arg.token.value.has_value()) {
-                    std::cout << "Napraw generator bo nie wszystko ma value! '" << tokenTypeToString(arg.token.type) << "'" << std::endl;
-                    exit(EXIT_FAILURE);
-                }
-                out << arg.token.value.value();
+    
+    void visit_expr(const ExprData& expr) override {
+        std::string value = expr.token.value.value_or("");
+        
+        // Jeśli to identyfikator, sprawdź czy jest zmienną
+        if (expr.token.type == TokenType::IDENT) {
+            auto it = m_variables.find(value);
+            if (it != m_variables.end()) {
+                m_output << it->second;
+                return;
             }
         }
-        out << "\n";
+        
+        m_output << value;
+    }
+    
+    //  aby zaimplementować użyj tak jak jest w vardecl bo używa on unique_ptr
+    void visit_binary_op(const BinaryOpData& op) override {
+        // Obsługa operacji binarnych (na przyszłość)
+        std::cerr << "Binary operations not yet implemented!\n";
+        m_output << "0";  // placeholder
     }
 
-    static void emitVar(const NodeStmtVar& stmt, std::ostream& out) {
-        std::string name = stmt.ident.value.value();
-        std::string val  = gen_expr(stmt.expr);
-        out << "scoreboard players set " << name << " " << val << "\n";
-    }
+
+    std::string getOutput() const { return m_output.str(); }
+    const auto& getVariables() const { return m_variables; }
+
+private:
+    //const NodeProg& m_prog;
+    std::stringstream m_output;
+    std::unordered_map<std::string, std::string> m_variables;
 };

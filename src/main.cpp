@@ -3,31 +3,53 @@
 #include <vector>
 #include <sstream>
 #include <fstream>
+#include <unordered_map>
 
-#include "./tokenization.cpp"
+#include "./tokenization.hpp"
 #include "./generation.cpp"
 #include "./parser.cpp"
 
-#include "./CommandRegistry.hpp"
-
-
-inline void printToken(const Token& token);
+#include "./registries/SimplifiedCommandRegistry.hpp"
 
 int main(int argc, char* argv[])
 {   
     if (argc < 2) {
         std::cerr << "Incorrect usage. Correct usage is..." << std::endl;
-        std::cerr << "mcjava <input.mcjava> [args]" << std::endl;
+        std::cerr << "mcjava.exe <input.mcjava> [args]" << std::endl;
         return EXIT_FAILURE;
     }
 
-    std::string arg = "";
-    if (argc > 2) {
-        arg = argv[2];
+    // Get Arguments
+    bool dumpTokens = false;
+    bool dumpCmds = false;
+
+    std::unordered_map<std::string,std::string> args;
+    for (int i = 2; i < argc; i++) {
+        std::string arg = argv[i];
+        if (arg.rfind("-", 0) == 0) {
+            size_t eqPos = arg.find('=');
+            if (eqPos != std::string::npos) {
+                std::string key = arg.substr(1,eqPos-1);
+                std::string value = arg.substr(eqPos+1);
+                args[key] = value;
+                //std::cout << "adding new " << key << " = " << value << " \n";
+            } else {
+                args[arg.substr(1)] = "true"; // np. -debug
+            }
+        }
     }
 
-    clock_t tStart = clock();
+    // Match arguments
+    if (args.find("dump-tokens") != args.end()) { // contains should work
+        dumpTokens = true;
+    }
 
+    if (args.find("dump-cmds") != args.end()) { // contains should work
+        dumpCmds = true;
+    }
+
+    // First time measurement
+    clock_t tStart = clock();
 
     std::string fullname = argv[1];
     std::string filename = fullname.substr(0, fullname.find_last_of("."));
@@ -42,19 +64,31 @@ int main(int argc, char* argv[])
         }
     }
 
-    // load commands
-    CommandRegistry reg;
+    // load simplified commands
+    SimplifiedCommandRegistry reg;
     std::string err;
-    if (!reg.loadFromFile("./mcdoc/commands.json", &err)) { std::cerr << "cmd load error: " << err << "\n"; return 1; }
+    if (!reg.loadFromFile("./../mcdoc/commands.json", &err)) { std::cerr << "cmd load error: " << err << "\n"; return EXIT_FAILURE; }
 
-    clock_t tEndDoc = clock();
+    if (dumpCmds) {
+        std::fstream file(filename + "-cmds.dump", std::ios::out);
+        for (std::string cmd : reg.getRoots()) {
+            file << cmd << std::endl;
+        }
+    }
 
-    Tokenizer tokenizer(std::move(contents));
+    // End of mcdoc parsing time measurement
+    clock_t tEndReg = clock();
+
+
+    // Tokenization
+    Tokenizer tokenizer(std::move(contents), reg);
     std::vector<Token> tokens = tokenizer.tokenize();
 
-    clock_t tEndTok = clock();   // koniec pomiaru
+    // end of tokenization time measurement
+    clock_t tEndTok = clock();
 
-    if (arg == "-dump-tokens") {
+    // if dump tokens argument is set, dump all tokens to a  separate file
+    if (dumpTokens) {
         std::fstream file(filename + "-token.dump", std::ios::out);
         for (Token token : tokens) {
             if (token.value.has_value()) {
@@ -65,26 +99,32 @@ int main(int argc, char* argv[])
         }
     }
 
+
+    // Parsing tokens
     Parser parser(std::move(tokens), reg);
-    std::optional<NodeProg> root = parser.parse_prog();
-
-    clock_t tEndPar = clock();   // koniec pomiaru
-
-    if (!root.has_value()) {
-        std::cerr << "No exit statement found!" << std::endl;
+    auto ast = parser.parse(); // std::vector<ASTNode>
+    
+    if (!ast) {
+        std::cerr << "Parse failed: no AST generated" << std::endl;
         return EXIT_FAILURE;
     }
 
-    Generator generator(std::move(*root));
+    // end of parsing time measurement
+    clock_t tEndPar = clock();
+
+    // Generation
+    Generator generator;
     {   
         std::fstream file(filename + ".mcfunction", std::ios::out);
-        file << generator.gen_prog();
+        file << generator.generate(*ast);
     }
 
-    clock_t tEndGen = clock();   // koniec pomiaru
+    // end of generation time measurement
+    clock_t tEndGen = clock();
 
-    printf("Time parsing mcdoc: %.2fs\n", (double)(tEndDoc - tStart)/CLOCKS_PER_SEC);
-    printf("Time tokenizing: %.2fs\n", (double)(tEndTok - tEndDoc)/CLOCKS_PER_SEC);
+    // Print and format gathered times
+    printf("Time parsing mcdoc: %.2fs\n", (double)(tEndReg - tStart)/CLOCKS_PER_SEC);
+    printf("Time tokenizing: %.2fs\n", (double)(tEndTok - tEndReg)/CLOCKS_PER_SEC);
     printf("Time parsing: %.2fs\n", (double)(tEndPar - tEndTok)/CLOCKS_PER_SEC);
     printf("Time generating: %.2fs\n", (double)(tEndGen - tEndPar)/CLOCKS_PER_SEC);
     printf("Time taken: %.2fs\n", (double)(clock() - tStart)/CLOCKS_PER_SEC);

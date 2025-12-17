@@ -1,0 +1,5 @@
+player_money = 20
+player = "PLAYER1"
+
+scoreboard players set player money player_money
+say player "has" player_money "dollars"
