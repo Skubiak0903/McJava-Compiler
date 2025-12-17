@@ -4,47 +4,55 @@
 #include <variant>
 #include <bits/stdc++.h>
 
-#include "./tokenization.hpp"
-#include "./registries/SimplifiedCommandRegistry.hpp"
-#include "./ast.hpp"
+#include "./tokenization.cpp"
+
+#include "./CommandRegistry.hpp"
+
+struct NodeExprIntLit {
+    Token int_lit;
+};
+struct NodeExprIdent {
+    Token ident;
+};
+
+struct NodeExpr {
+    std::variant<NodeExprIntLit, NodeExprIdent> var;
+};
+
+struct NodeCmdArg {
+    // parser_name - np. "brigadier:integer" or "minecraft:entity" (opcjonalne)
+    std::optional<std::string> parser;
+    Token token; // surowy token z tokenizera (wartość + typ + line/col)
+};
+
+struct NodeStmtCommand {
+    Token command_name;                 // token ident z nazwą komendy
+    std::vector<NodeCmdArg> args;       // kolejność zgodna ze z matchowaną składnią
+};
+
+struct NodeStmtVar {
+    Token ident;
+    NodeExpr expr;
+};
+
+struct NodeStmt {
+    std::variant<
+        NodeStmtVar,
+        NodeStmtCommand> var;
+};
+
+struct NodeProg {
+    std::vector<NodeStmt> stmts;
+};
+
+
 
 class Parser {
 public:
-    inline explicit Parser(std::vector<Token> tokens, SimplifiedCommandRegistry& registry)
-        : m_tokens(std::move(tokens)), m_reg(registry) {}
+    inline explicit Parser(std::vector<Token> tokens, CommandRegistry& registry)
+        : m_tokens(std::move(tokens)), reg(registry) {}
 
-    // Główna funkcja parsująca - zwraca AST
-    std::unique_ptr<std::vector<ASTNode>> parse() {
-        auto prog = std::make_unique<ASTNode>();
-        // Tworzymy początkowy node programu
-        std::vector<ASTNode> statements;
-
-        while (peek().has_value()) {
-            // Skip newlines and random semi colons
-            if (peek()->type == TokenType::NEW_LINE || peek()->type == TokenType::SEMI_COLON){
-                consume();
-                continue;
-            }
-            
-            // End if thats the end
-            if (peek()->type == TokenType::END_OF_FILE) break;
-
-            // Parsuj statement i dodaj do listy
-            if (auto stmt = parseStatement()) {
-                statements.push_back(std::move(*stmt));
-            } else {
-                error(true, peek()->line, peek()->col, "Failed to parse statement: ", tokenTypeToString(peek()->type));
-            }
-        }
-
-         // Na razie zwracamy pierwszy statement lub puste
-        if (!statements.empty()) {
-            return std::make_unique<std::vector<ASTNode>>(std::move(statements));
-        }
-        return nullptr;
-    }
-
-    /*std::optional<NodeExpr> parse_expr()
+    std::optional<NodeExpr> parse_expr()
     {
         if (peek().has_value() && peek().value().type == TokenType::int_lit) {
             return NodeExpr{ .var = NodeExprIntLit { .int_lit = consume() } };
@@ -53,9 +61,328 @@ public:
         } else {
             return {};
         }
-    }*/
+    }
 
-    /*std::optional<NodeStmt> parse_command() {
+    // próbuj sparsować argument zgodnie z parser_name (proste heurystyki)
+    std::optional<Token> try_parse_arg_for_parser(const std::optional<std::string>& parser_name) {
+        if (!peek().has_value()) return {};
+        Token tok = peek().value();
+        if (tok.value.has_value()) {
+            //std::cout << "ParsedTok - Token: " << tok.value.value() << std::endl;
+        } else {
+            //std::cout << "ParsedTok - Token: " << "Value not found! TokenType: " << tokenTypeToString(tok.type) << std::endl;
+        }
+        
+
+        // heurystyka: rozpoznaj kilka parserów z data.json
+        if (parser_name.has_value()) {
+            const std::string &p = *parser_name;
+            if (p.find("brigadier:integer") != std::string::npos ||
+                p.find("brigadier:long") != std::string::npos) {
+                if (tok.type == TokenType::int_lit) { return consume(); }
+                return {};
+            }
+            if (p.find("brigadier:float") != std::string::npos ||
+                p.find("brigadier:double") != std::string::npos) {
+                // accept selector (@s, @p...) or ident (player name)
+                if (tok.type == TokenType::float_lit || tok.type == TokenType::int_lit) return consume();
+                return {};
+            }
+            if (p.find("minecraft:entity") != std::string::npos) {
+                // accept selector (@s, @p...) or ident (player name)
+                if (tok.type == TokenType::selector || tok.type == TokenType::ident) return consume();
+                return {};
+            }
+            if (p.find("minecraft:block_pos") != std::string::npos) {
+                std::optional<Token> t1 = peek();
+                std::optional<Token> t2 = peek(1);
+                std::optional<Token> t3 = peek(2);
+
+                if (!t1.has_value() || !t2.has_value() || !t3.has_value()) return {};
+
+                if ((t1->type == TokenType::coord || t1->type == TokenType::int_lit) &&
+                    (t2->type == TokenType::coord || t2->type == TokenType::int_lit) &&
+                    (t3->type == TokenType::coord || t3->type == TokenType::int_lit)) 
+                {
+                    // sprawdzenie spójności ^
+                    bool allCaret = t1->value.value()[0] == '^' && t2->value.value()[0] == '^' && t3->value.value()[0] == '^';
+                    bool anyCaret = t1->value.value()[0] == '^' || t2->value.value()[0] == '^' || t3->value.value()[0] == '^';
+
+                    if (anyCaret && !allCaret) 
+                        error(true, t1->line, t1->col, "Invalid block_pos: mix of ^ with other coordinates");
+                    
+                    std::stringstream str;
+                    str << consume().value.value_or("") << " ";
+                    str << consume().value.value_or("") << " ";
+                    str << consume().value.value_or("");
+                    return Token{ .type = TokenType::block_pos, .value = str.str(), .line = t1.value().line, .col = t1.value().col };
+                }
+
+                return {};
+            }
+            if (p.find("minecraft:vec3") != std::string::npos) {
+                std::optional<Token> t1 = peek();
+                std::optional<Token> t2 = peek(1);
+                std::optional<Token> t3 = peek(2);
+
+                if (!t1.has_value() || !t2.has_value() || !t3.has_value()) return {};
+
+                if ((t1->type == TokenType::coord || t1->type == TokenType::int_lit || t1->type == TokenType::float_lit) &&
+                    (t2->type == TokenType::coord || t2->type == TokenType::int_lit || t2->type == TokenType::float_lit) &&
+                    (t3->type == TokenType::coord || t3->type == TokenType::int_lit || t3->type == TokenType::float_lit)) 
+                {
+                    // sprawdzenie spójności ^
+                    bool allCaret = t1->value.value()[0] == '^' && t2->value.value()[0] == '^' && t3->value.value()[0] == '^';
+                    bool anyCaret = t1->value.value()[0] == '^' || t2->value.value()[0] == '^' || t3->value.value()[0] == '^';
+
+                    if (anyCaret && !allCaret) 
+                        error(true, t1->line, t1->col, "Invalid vector3: mix of ^ with other coordinates");
+                    
+                    std::stringstream str;
+                    str << consume().value.value_or("") << " ";
+                    str << consume().value.value_or("") << " ";
+                    str << consume().value.value_or("");
+                    return Token{ .type = TokenType::block_pos, .value = str.str(), .line = t1.value().line, .col = t1.value().col };
+                }
+
+                return {};
+            }
+            if (p.find("minecraft:column_pos") != std::string::npos) {
+                std::optional<Token> t1 = peek();
+                std::optional<Token> t2 = peek(1);
+
+                if (!t1.has_value() || !t2.has_value()) return {};
+
+                if ((t1->type == TokenType::coord || t1->type == TokenType::int_lit || t1->type == TokenType::float_lit) &&
+                    (t2->type == TokenType::coord || t2->type == TokenType::int_lit || t2->type == TokenType::float_lit)) 
+                {
+                    // sprawdzenie spójności ^
+                    bool allCaret = t1->value.value()[0] == '^' && t2->value.value()[0] == '^';
+                    bool anyCaret = t1->value.value()[0] == '^' || t2->value.value()[0] == '^';
+
+                    if (anyCaret && !allCaret) 
+                        error(true, t1->line, t1->col, "Invalid column_pos: mix of ^ with other coordinates");
+                    
+                    std::stringstream str;
+                    str << consume().value.value_or("") << " ";
+                    str << consume().value.value_or("");
+                    return Token{ .type = TokenType::block_pos, .value = str.str(), .line = t1.value().line, .col = t1.value().col };
+                }
+
+                return {};
+            }
+            if (p.find("minecraft:rotation") != std::string::npos) {
+                std::optional<Token> t1 = peek();
+                std::optional<Token> t2 = peek(1);
+
+                if (!t1.has_value() || !t2.has_value()) return {};
+
+                if ((t1->type == TokenType::coord || t1->type == TokenType::int_lit || t1->type == TokenType::float_lit) &&
+                    (t2->type == TokenType::coord || t2->type == TokenType::int_lit || t2->type == TokenType::float_lit)) 
+                {
+                    // sprawdzenie spójności ^
+                    bool anyCaret = t1->value.value()[0] == '^' || t2->value.value()[0] == '^';
+
+                    if (anyCaret) 
+                        error(true, t1->line, t1->col, "Invalid rotation: '^' cannot be used in rotation");
+                    
+                    std::stringstream str;
+                    str << consume().value.value_or("") << " ";
+                    str << consume().value.value_or("");
+                    return Token{ .type = TokenType::rotation, .value = str.str(), .line = t1.value().line, .col = t1.value().col };
+                }
+
+                return {};
+            }
+            if (p.find("minecraft:component") != std::string::npos) {
+                // accept selector (@s, @p...) or ident (player name)
+                if (tok.type == TokenType::ident || tok.type == TokenType::string_lit || tok.type == TokenType::component) return consume();
+                return {};
+            }
+            if (p.find("minecraft:message") != std::string::npos) {
+                if (tok.type == TokenType::string_lit || tok.type == TokenType::ident || tok.type == TokenType::selector) return consume();
+                return {};
+            }
+            if (p.find("brigadier:string") != std::string::npos) {
+                if (tok.type == TokenType::ident || tok.type == TokenType::string_lit) return consume();
+                return {};
+            }
+            if (p.find("minecraft:item_predicate") != std::string::npos) {
+                if (tok.type == TokenType::ident || tok.type == TokenType::asterisk || tok.type == TokenType::item_predicate) return consume();
+                return {};
+            }
+            if (p.find("minecraft:block_predicate") != std::string::npos) {
+                if (tok.type == TokenType::ident || tok.type == TokenType::asterisk || tok.type == TokenType::item_predicate) return consume();
+                return {};
+            }
+            if (p.find("minecraft:resource_location") != std::string::npos) {
+                // resource locations often look like ident:ident or ident.ident -> accept ident
+                if (tok.type == TokenType::ident || tok.type == TokenType::path) return consume();
+                return {};
+            }
+            if (p.find("minecraft:block_state") != std::string::npos) {
+                // resource locations often look like ident:ident or ident.ident -> accept ident
+                if (tok.type == TokenType::ident || tok.type == TokenType::block_state) return consume();
+                return {};
+            }
+            if (p.find("minecraft:item_stack") != std::string::npos) {
+                // resource locations often look like ident:ident or ident.ident -> accept ident
+                if (tok.type == TokenType::ident || tok.type == TokenType::block_state) return consume();
+                return {};
+            }
+            if (p.find("minecraft:dimension") != std::string::npos) {
+                // resource locations often look like ident:ident or ident.ident -> accept ident
+                if (tok.type == TokenType::ident || tok.type == TokenType::path) return consume();
+                return {};
+            }
+            if (p.find("minecraft:resource_key") != std::string::npos) {
+                // resource locations often look like ident:ident or ident.ident -> accept ident
+                if (tok.type == TokenType::ident || tok.type == TokenType::path) return consume();
+                return {};
+            }
+            if (p.find("minecraft:resource_or_tag") != std::string::npos) {
+                // resource locations often look like ident:ident or ident.ident -> accept ident
+                if (tok.type == TokenType::ident || tok.type == TokenType::item_predicate || tok.type == TokenType::path) return consume();
+                return {};
+            }
+            if (p.find("minecraft:function") != std::string::npos) {
+                // resource locations often look like ident:ident or ident.ident -> accept ident
+                if (tok.type == TokenType::ident || tok.type == TokenType::item_predicate || tok.type == TokenType::path) return consume();
+                return {};
+            }
+            if (p.find("minecraft:loot_predicate") != std::string::npos) {
+                // resource locations often look like ident:ident or ident.ident -> accept ident
+                if (tok.type == TokenType::ident || tok.type == TokenType::path) return consume();
+                return {};
+            }
+            if (p.find("minecraft:objective") != std::string::npos) {
+                // resource locations often look like ident:ident or ident.ident -> accept ident
+                if (tok.type == TokenType::ident) return consume();
+                return {};
+            }
+            if (p.find("minecraft:entity_type") != std::string::npos) {
+                // resource locations often look like ident:ident or ident.ident -> accept ident
+                if (tok.type == TokenType::ident) return consume();
+                return {};
+            }
+            if (p.find("minecraft:uuid") != std::string::npos) {
+                // resource locations often look like ident:ident or ident.ident -> accept ident
+                if (tok.type == TokenType::uuid) return consume();
+                return {};
+            }
+            if (p.find("minecraft:score_holder") != std::string::npos) {
+                // resource locations often look like ident:ident or ident.ident -> accept ident
+                if (tok.type == TokenType::ident || tok.type == TokenType::selector || tok.type == TokenType::asterisk || tok.type == TokenType::item_predicate) return consume();
+                return {};
+            }
+            if (p.find("minecraft:int_range") != std::string::npos) {
+                // resource locations often look like ident:ident or ident.ident -> accept ident
+                if (tok.type == TokenType::int_range || tok.type == TokenType::int_lit) return consume();
+                return {};
+            }
+            if (p.find("minecraft:item_slots") != std::string::npos) {
+                // resource locations often look like ident:ident or ident.ident -> accept ident
+                if (tok.type == TokenType::ident || tok.type == TokenType::item_predicate || tok.type == TokenType::path || tok.type == TokenType::item_slot) return consume();
+                return {};
+            }
+            if (p.find("minecraft:resource") != std::string::npos) {
+                // resource locations often look like ident:ident or ident.ident -> accept ident
+                if (tok.type == TokenType::ident || tok.type == TokenType::path) return consume();
+                return {};
+            }
+            if (p.find("minecraft:game_profile") != std::string::npos) {
+                // resource locations often look like ident:ident or ident.ident -> accept ident
+                if (tok.type == TokenType::ident || tok.type == TokenType::selector) return consume();
+                return {};
+            }
+            if (p.find("minecraft:nbt_path") != std::string::npos) {
+                // resource locations often look like ident:ident or ident.ident -> accept ident
+                if (tok.type == TokenType::component || tok.type == TokenType::json || tok.type == TokenType::string_lit || tok.type == TokenType::ident) return consume();
+                return {};
+            }
+            if (p.find("minecraft:nbt_tag") != std::string::npos) {
+                // resource locations often look like ident:ident or ident.ident -> accept ident
+                if (tok.type == TokenType::component || tok.type == TokenType::json || tok.type == TokenType::string_lit || tok.type == TokenType::ident) return consume();
+                return {};
+            }
+            if (p.find("minecraft:nbt_compound_tag") != std::string::npos) {
+                // resource locations often look like ident:ident or ident.ident -> accept ident
+                if (tok.type == TokenType::component || tok.type == TokenType::json || tok.type == TokenType::string_lit || tok.type == TokenType::ident) return consume();
+                return {};
+            }
+            if (p.find("minecraft:dialog") != std::string::npos) {
+                // resource locations often look like ident:ident or ident.ident -> accept ident
+                if (tok.type == TokenType::component || tok.type == TokenType::json || tok.type == TokenType::ident) return consume();
+                return {};
+            }
+            if (p.find("minecraft:gamemode") != std::string::npos) {
+                // resource locations often look like ident:ident or ident.ident -> accept ident
+                if (tok.type == TokenType::ident) {
+                    if (!tok.value.has_value()) return {};
+                    std::string t = tok.value.value();
+                    if (t == "creative" || t == "adventure" || t == "survival" || t == "spectator")
+                        return consume();
+                }
+                return {};
+            }
+            if (p.find("minecraft:entity_anchor") != std::string::npos) {
+                // resource locations often look like ident:ident or ident.ident -> accept ident
+                if (tok.type == TokenType::ident) {
+                    if (!tok.value.has_value()) return {};
+                    std::string t = tok.value.value();
+                    if (t == "feet" || t == "eyes")
+                        return consume();
+                }
+                return {};
+            }
+            if (p.find("brigadier:bool") != std::string::npos) {
+                // resource locations often look like ident:ident or ident.ident -> accept ident
+                if (tok.type == TokenType::ident) {
+                    if (!tok.value.has_value()) return {};
+                    std::string t = tok.value.value();
+                    if (t == "true" || t == "false")
+                        return consume();
+                }
+                return {};
+            }
+            if (p.find("minecraft:heightmap") != std::string::npos) {
+                // resource locations often look like ident:ident or ident.ident -> accept ident
+                if (tok.type == TokenType::ident) {
+                    if (!tok.value.has_value()) return {};
+                    std::string t = tok.value.value();
+                    if (t == "motion_blocking_no_leaves" || t == "motion_blocking" || t == "ocean_floor" || t == "world_surface")
+                        return consume();
+                }
+                return {};
+            }
+            if (p.find("minecraft:swizzle") != std::string::npos) {
+                // resource locations often look like ident:ident or ident.ident -> accept ident
+                if (tok.type == TokenType::ident) {
+                    if (!tok.value.has_value()) return {};
+                    std::string t = tok.value.value();
+                    if (t == "x" || t == "xy" || t == "xyz" || t == "xz" || t == "xzy" || 
+                        t == "y" || t == "yx" || t == "yxz" || t == "yz" || t == "yzx" || 
+                        t == "z" || t == "zy" || t == "zyx" || t == "zx" || t == "zxy")
+                        return consume();
+                }
+                return {};
+            }
+            // fallback: accept ident/int/selector/string for unknown parser
+            if (tok.type == TokenType::ident || tok.type == TokenType::int_lit || tok.type == TokenType::selector || tok.type==TokenType::string_lit) {
+                return consume();
+            }
+            return {};
+        } else {
+            // no parser specified -> accept ident/literal/int/selector/string
+            if (tok.type == TokenType::ident || tok.type == TokenType::int_lit ||
+                tok.type == TokenType::selector || tok.type==TokenType::string_lit) {
+                return consume();
+            }
+            return {};
+        }
+    }
+
+    std::optional<NodeStmt> parse_command() {
         // zakładamy, że aktualny token to ident (nazwa komendy)
         if (!peek().has_value() || peek()->type != TokenType::ident) return {};
 
@@ -210,9 +537,135 @@ public:
             error(peek().has_value(), opt->line, opt->col, "Found unknown argument '", opt->value.value(), "'!"); 
         } // koniec while
         return NodeStmt{ .var = stmt_node };
+    }
+
+    /*std::optional<NodeStmt> parse_command_old() {
+        // zakładamy, że aktualny token to ident (nazwa komendy)
+        if (!peek().has_value() || peek().value().type != TokenType::ident) return {};
+
+        std::string cmdName = peek().value().value.value(); // nazwa komendy
+        auto variants = reg.getSyntaxVariants(cmdName);
+        if (variants.empty()) return {}; // nieznana komenda
+
+        size_t start_idx = m_idx;
+
+        // We'll try all variants and pick the best one (longest consumed, executable).
+        bool anyMatched = false;
+        size_t best_end_idx = start_idx;
+        NodeStmtCommand best_cmdnode; // will be moved into return
+        bool best_is_set = false;
+
+        for (const auto &variant : variants) {
+            m_idx = start_idx; // reset before trying this variant
+            NodeStmtCommand cmdnode;
+            // consume top-level command name token
+            cmdnode.command_name = consume();
+
+            bool fail = false;
+            // we will collect args into local cmdnode.args as we go
+            for (size_t i = 1; i < variant.size(); ++i) {
+                const SyntaxToken &st = variant[i];
+
+                std::cout << "Is " << cmdName << " literal - " << st.is_literal << "; Parser: " << st.parser.value_or(std::string{"UNKNOWN"}) << std::endl;
+                if (st.is_literal) {
+                    if (!peek().has_value()) { fail = true; break; }
+
+                    Token t = peek().value();
+                    //std::cout << "St.key -> " << st.key << std::endl;
+                    if (!t.value.has_value() || t.value.value() != st.key) { fail = true; break; }
+
+                    // consume and store literal as arg (so emitter prints it)
+                    Token consumed = consume();
+                    if (!consumed.value.has_value()) consumed.value = st.key;
+                    NodeCmdArg a;
+                    a.parser = std::nullopt;
+                    a.token = std::move(consumed);
+                    cmdnode.args.push_back(std::move(a));
+                } else {
+                    // argument node: try parse according to parser name
+                    if (st.parser == "minecraft:message") {
+                        // greedy parse: zbieramy wszystko aż do końca linii
+                        std::stringstream joined;
+                        bool first = true;
+
+                        while (peek().has_value() && peek().value().type != TokenType::new_line && peek().value().type != TokenType::eof) {
+                            std::cout << "Next Token" << std::endl;
+                            Token t = consume();
+                            if (t.value.has_value()) {
+                                if (!first) joined << " ";
+                                std::cout << "Joined: " << t.value.value() << std::endl;
+                                joined << t.value.value();
+                                first = false;
+                            }
+                        }
+
+                        Token combined;
+                        combined.type = TokenType::ident;  // albo ident, ale string_lit ładniej
+                        combined.value = joined.str();
+
+                        NodeCmdArg a;
+                        a.parser = st.parser;
+                        a.token = std::move(combined);
+                        cmdnode.args.push_back(std::move(a));
+
+                        // i tu KONIEC tej komendy — resztę linii ignorujemy jako część message
+                        break;
+                    } else {
+                        auto parsedTok = try_parse_arg_for_parser(st.parser);
+                        if (!parsedTok.has_value()) { fail = true; break; }
+                        NodeCmdArg a;
+                        a.parser = st.parser;
+                        a.token = parsedTok.value();
+                        cmdnode.args.push_back(std::move(a));
+                    }
+                }
+            } // koniec pętli variant tokens
+
+            // jeśli nie pasuje — kontynuuj kolejne warianty
+            if (fail) continue;
+
+            // successful match for this variant: record how far we consumed
+            size_t end_idx = m_idx;
+            bool executable_here = (!variant.empty() && variant.back().executable_here);
+
+            // prefer variants that:
+            // 1) match and are executable
+            // 2) consume more tokens (longest match)
+            if (executable_here) {
+                if (!best_is_set || end_idx > best_end_idx) {
+                    best_end_idx = end_idx;
+                    best_cmdnode = std::move(cmdnode);
+                    best_is_set = true;
+                    anyMatched = true;
+                }
+            } else {
+                // If not executable, we might still consider it if we have no better match yet,
+                // but prefer executable ones over non-executable.
+                if (!best_is_set && !anyMatched) {
+                    best_end_idx = end_idx;
+                    best_cmdnode = std::move(cmdnode);
+                    best_is_set = true;
+                    // mark matched but prefer to find executable later
+                    anyMatched = true;
+                }
+            }
+            // continue checking other variants to potentially find a longer/executable one
+        } // koniec foreach variant
+
+        if (!anyMatched) {
+            // restore and return nothing
+            m_idx = start_idx;
+            return {};
+        }
+
+        // finalize: set parser index to end of best match
+        m_idx = best_end_idx;
+
+        // return NodeStmtCommand (wrapped in NodeStmt)
+        return NodeStmt{ .var = best_cmdnode };
     }*/
 
-    /*std::optional<NodeStmtVar> parse_stmt_var() {
+    std::optional<NodeStmtVar> parse_stmt_var() {
         NodeStmtVar stmt_var = NodeStmtVar { .ident = consume() }; // consume ident
         consume(); // consume =
         if (auto expr = parse_expr()) {
@@ -221,9 +674,9 @@ public:
             error(peek().has_value(), peek().value().line, peek().value().col, "Invalid Expression");
         }
         return stmt_var;
-    }*/
+    }
 
-    /*std::optional<NodeStmt> parse_stmt()
+    std::optional<NodeStmt> parse_stmt()
     {   
         NodeStmt stmt;
         if (peek().has_value()) {
@@ -246,9 +699,9 @@ public:
             }
         }
         return stmt;
-    }*/
+    }
 
-    /*std::optional<NodeProg> parse_prog() 
+    std::optional<NodeProg> parse_prog() 
     {
         NodeProg prog;
         while(peek().has_value()) {
@@ -264,91 +717,9 @@ public:
 
         m_idx = 0;
         return prog;
-    }*/
+    }
 
 private:
-    // parsing
-
-    // Parse statement
-    std::optional<ASTNode> parseStatement() {
-        if (!peek().has_value()) return std::nullopt;
-
-        Token tok = peek().value();
-
-        // 1. Variable assignment (x = 5)
-        if (tok.type == TokenType::IDENT && peek(1).has_value() && peek(1)->type == TokenType::EQUALS) { // its checking only for (IDENT =)
-            return parseVariableAssignment();
-        }
-        
-        // 2. Minecraft command (say "hello")
-        if (tok.type == TokenType::CMD_KEY) {
-            return parseMinecraftCommand();
-        }
-
-        error(true, tok.line, tok.col, "Unknown statement type: ", tokenTypeToString(tok.type));
-        return std::nullopt;
-    }
-
-
-    // Parsuje przypisanie zmiennej: x = 5
-    ASTNode parseVariableAssignment() {
-        Token varName = consume();  // np. "myScore"
-        consume();  // konsumuj '='
-        
-        // Parsuj wartość (może być liczba lub inna zmienna)
-        ASTNode value = parseExpression();
-        
-        // TWORZYMY NODE AST!
-        return make_vardecl(varName, std::move(value));
-    }
-
-
-    // Parse command (just first token is known rest is on user side to be sure its correct)
-    ASTNode parseMinecraftCommand() {
-        Token cmdToken = consume();  // np. "say"
-        std::vector<ASTNode> args;
-        
-        // Zbierz wszystkie argumenty do końca linii
-        while (peek().has_value() && 
-               peek()->type != TokenType::NEW_LINE &&
-               peek()->type != TokenType::END_OF_FILE) {
-            
-            args.push_back(parseExpression());
-        }
-        
-        // Skip newline
-        if (peek().has_value() && peek()->type == TokenType::NEW_LINE) {
-            consume();
-        }
-        
-        // TWORZYMY NODE AST!
-        return make_command(cmdToken, std::move(args));
-    }
-
-
-    // Parsuje wyrażenie (liczba, string, zmienna)
-    ASTNode parseExpression() {
-        if (!peek().has_value()) error(false, 0, 0, "Expected expression");
-        
-        Token tok = consume();
-        
-        // Sprawdź typ tokena i utwórz odpowiedni node
-        if (tok.type == TokenType::INT_LIT ||
-            tok.type == TokenType::FLOAT_LIT ||
-            tok.type == TokenType::STRING_LIT ||
-            tok.type == TokenType::CMD_KEY ||       // without this `scoreboard players set player test 1` it would create error bc test is CMD_KEY as it is also separate command - the same thing would happen with /execute
-            tok.type == TokenType::IDENT) {
-            
-            // TWORZYMY NODE AST!
-            return make_expr(tok);
-        }
-        
-        error(true, tok.line, tok.col, "Invalid expression token: ", tokenTypeToString(tok.type));
-        return make_expr(Token{});
-    }
-
-
-    // Token consume/peek implementation
     inline std::optional<Token> peek(int offset = 0) const 
     {
         if (m_idx + offset >= m_tokens.size()) {
@@ -362,17 +733,17 @@ private:
         return m_tokens.at(m_idx++);
     }
 
-
-    // helpers
-
     // helpers: bezpieczny peek/consume pozostają
-    //inline bool tokensRemain() const { return peek().has_value(); }
+    inline bool tokensRemain() const { return peek().has_value(); }
 
     // zwraca tekst tokena (value) albo pusty string
-    /*static std::string token_text(const Token& t) {
+    static std::string token_text(const Token& t) {
         return t.value.value_or(std::string{});
-    }*/
+    }
 
+    const std::vector<Token> m_tokens;
+    size_t m_idx = 0;
+    CommandRegistry& reg;
 
     template<typename... Args>
     [[noreturn]] void error(bool has_value, size_t line, size_t col, Args&&... args) {
@@ -385,10 +756,4 @@ private:
         }
         exit(EXIT_FAILURE);
     }
-
-    // variables
-
-    const std::vector<Token> m_tokens;
-    size_t m_idx = 0;
-    SimplifiedCommandRegistry& m_reg;
 };
