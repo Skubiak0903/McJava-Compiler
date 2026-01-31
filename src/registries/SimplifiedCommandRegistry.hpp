@@ -17,7 +17,15 @@ public:
     bool loadFromFile(const std::string& path, std::string *err = nullptr) {
         std::ifstream f(path);
         if (!f.is_open()) {
-            if (err) *err = "Cannot open file: " + path;
+            std::cout << "ERROR: Cannot open file: " << path << std::endl;
+            
+            // Sprawdź czy plik istnieje
+            if (std::filesystem::exists(path)) {
+                std::cout << "File exists but cannot be opened." << std::endl;
+            } else {
+                std::cout << "File does not exist." << std::endl;
+            }
+            
             return false;
         }
         try {

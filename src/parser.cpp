@@ -1,378 +1,391 @@
-#pragma once
-
+#include <memory>
 #include <vector>
-#include <variant>
-#include <bits/stdc++.h>
+#include <unordered_map>
 
 #include "./tokenization.hpp"
 #include "./registries/SimplifiedCommandRegistry.hpp"
 #include "./ast.hpp"
 
 class Parser {
-public:
-    inline explicit Parser(std::vector<Token> tokens, SimplifiedCommandRegistry& registry)
-        : m_tokens(std::move(tokens)), m_reg(registry) {}
-
-    // Główna funkcja parsująca - zwraca AST
-    std::unique_ptr<std::vector<ASTNode>> parse() {
-        auto prog = std::make_unique<ASTNode>();
-        // Tworzymy początkowy node programu
-        std::vector<ASTNode> statements;
-
-        while (peek().has_value()) {
+    public:
+    explicit Parser(std::vector<Token> tokens, SimplifiedCommandRegistry& reg)
+    : tokens_(std::move(tokens)), reg_(reg), pos_(0) {}
+    
+    std::unique_ptr<ASTNode> parse() {
+        auto scope = std::make_unique<ScopeNode>();
+        
+        while (hasTokens()) {
             // Skip newlines and random semi colons
-            if (peek()->type == TokenType::NEW_LINE || peek()->type == TokenType::SEMI_COLON){
+            if (peek().type == TokenType::NEW_LINE || peek().type == TokenType::SEMI_COLON){
                 consume();
                 continue;
             }
             
             // End if thats the end
-            if (peek()->type == TokenType::END_OF_FILE) break;
-
+            if (peek().type == TokenType::END_OF_FILE) break;
+            
             // Parsuj statement i dodaj do listy
             if (auto stmt = parseStatement()) {
-                statements.push_back(std::move(*stmt));
+                scope->statements.push_back(std::move(stmt));
             } else {
-                error(true, peek()->line, peek()->col, "Failed to parse statement: ", tokenTypeToString(peek()->type));
+                error(true, peek().line, peek().col, "Failed to parse statement: ", tokenTypeToString(peek().type));
             }
         }
-
-         // Na razie zwracamy pierwszy statement lub puste
-        if (!statements.empty()) {
-            return std::make_unique<std::vector<ASTNode>>(std::move(statements));
-        }
-        return nullptr;
+        return scope;
+        
     }
 
-    /*std::optional<NodeExpr> parse_expr()
-    {
-        if (peek().has_value() && peek().value().type == TokenType::int_lit) {
-            return NodeExpr{ .var = NodeExprIntLit { .int_lit = consume() } };
-        } else if (peek().has_value() && peek().value().type == TokenType::ident) {
-            return NodeExpr{ .var = NodeExprIdent { .ident = consume() } };
-        } else {
-            return {};
-        }
-    }*/
-
-    /*std::optional<NodeStmt> parse_command() {
-        // zakładamy, że aktualny token to ident (nazwa komendy)
-        if (!peek().has_value() || peek()->type != TokenType::ident) return {};
-
-        size_t start_idx = m_idx;
-        Token rootToken = consume(); // nazwa komendy
-        const CmdNode* cur_node = reg.getRootNodeFor(rootToken.value.value());
-
-        if (cur_node == nullptr) {
-            m_idx = start_idx;
-            return {}; // nieznana komenda
-        }
-
-        NodeStmtCommand stmt_node;
-        stmt_node.command_name = rootToken;
-        
-
-        // jeśli węzeł sam w sobie jest wykonywalny i nie ma więcej tokenów,
-        // to jest już poprawna komenda
-        if (!peek().has_value() || peek()->type == TokenType::new_line || peek()->type == TokenType::eof) {
-            if (cur_node->executable) return NodeStmt{ .var = stmt_node };
-            // inaczej to nie jest kompletny wariant; przywróć i zwróć nullopt
-            //m_idx = start_idx; - to jezeli był by return {};
-            error(peek().has_value(), peek().value().line, peek().value().col, "Unexpected end of command!");
-        }
-
-        while (true) {
-            // jeśli EOF/NEWLINE — sprawdź czy aktualny node jest executable
-            auto opt = peek();
-            if (!opt.has_value() || opt->type == TokenType::new_line || opt->type == TokenType::eof) {
-                if (cur_node->executable) {
-                    return NodeStmt{ .var = stmt_node };
-                } else {
-                    // niedokończona komenda — przywróć i zwróć nic
-                    //m_idx = start_idx; - to jezeli był by return {};
-                    error(peek().has_value(), peek().value().line, peek().value().col, "Unexpected end of command!");
-                }
-            }
-
-            if (cur_node->key == "run") {
-                const CmdNode* targetNode = reg.getRootNodeFor(opt->value.value_or(""));
-                if (!targetNode) error(true, opt->line, opt->col, "Unexpected argument, got '", opt->value.value(), "'!");
-
-                Token consumed = consume();
-                NodeCmdArg a{ std::nullopt, consumed };
-                stmt_node.args.push_back(std::move(a));
-                cur_node = targetNode;
-                continue;
-            }
-
-            bool redir_success = false;
-            for (const std::string &redir : cur_node->redirect) {
-                const CmdNode* targetNode = reg.getRootNodeFor(redir);
-                if (!targetNode) continue; // should not happen
-
-                const std::string &nextWord = opt->value.value_or("");
-                auto litIt = targetNode->children.find(nextWord); 
-                if (litIt == targetNode->children.end()) continue; // jeżeli nie znaleziono argumentu w  tym node
-
-                redir_success = true;
-                //std::cout << "znaleziono noda '" << redir << "' na lini " << opt->line << std::endl;
-
-                Token consumed = consume();
-                NodeCmdArg a{ std::nullopt, consumed };
-                stmt_node.args.push_back(std::move(a));
-                cur_node = litIt->second.get();
-                break;
-            }
-            if (redir_success) continue;
-
-            // jeżeli jest ident i arument to literal to poszukaj nextWord w pair<string,CmdNode> i zwróć jeżeli znalazł
-            // najpierw spróbuj literalnego dopasowania O(1)
-            if (opt->type == TokenType::ident) {
-                const std::string &nextWord = opt->value.value_or("");
-                auto litIt = cur_node->children.find(nextWord);
-                if (litIt != cur_node->children.end() && litIt->second->type == "literal") {
-                    // dopasowany literal
-                    const CmdNode* next_node = litIt->second.get();
-                    Token consumed = consume();
-                    if (!consumed.value.has_value()) consumed.value = next_node->key;
-                    NodeCmdArg a{ std::nullopt, std::move(consumed) };
-                    stmt_node.args.push_back(std::move(a));
-                    cur_node = next_node;
-                    continue; // idź dalej od nowego cur_node
-                }
-            }
-
-            // nie znaleziono literal — spróbuj argument children (w deterministycznej kolejności)
-            bool anyArgumentChild = false;
-            bool matchedArgument = false;
-
-
-            // **IMPORTANT**: Iterate only argument-type children.
-            // To zapewnić deterministyczną kolejność, możesz chcieć przechowywać
-            // argument children w vector w CmdNode (zachowując order z JSON).
-            for (const auto &p : cur_node->children) {
-                const CmdNode* next_node = p.second.get();
-                if (next_node->type != "argument") continue;
-                anyArgumentChild = true;
-
-                // specjalny-case: message => greedy consume to end-of-line and finish
-                if (next_node->parser.has_value() && *next_node->parser == "minecraft:message") {
-                    std::stringstream joined;
-                    bool first = true;
-                    while (peek().has_value() && peek()->type != TokenType::new_line && peek()->type != TokenType::eof) {
-                        Token t = consume();
-                        if (t.value.has_value()) {
-                            if (!first) joined << " ";
-                            joined << t.value.value();
-                            first = false;
-                        }
-                    }
-                    Token combined{ .type = TokenType::ident, .value = joined.str(), .line = rootToken.line, .col = rootToken.col };
-                    NodeCmdArg a{ next_node->parser, std::move(combined) };
-                    stmt_node.args.push_back(std::move(a));
-                    // message uznajemy za terminal — update cur_node i zakończ (jak w wariantach)
-                    cur_node = next_node;
-                    // Po greedy parse traktujemy to jako koniec ścieżki; sprawdź wykonalność
-                    if (cur_node->executable) return NodeStmt{ .var = stmt_node };
-                    // jeśli po message nie ma executable, przywróć start i zwróć nullopt
-                    //m_idx = start_idx; - to jezeli był by return {};
-                    //return {};
-                    error(true, opt->line, opt->col, "Found unexecutable command after greedy consume! Only way is to parse correctly is to remove that line!");
-                }
-
-                // zwykły argument: spróbuj go parsować heurystycznie
-                auto parsedTok = try_parse_arg_for_parser(next_node->parser);
-                if (!parsedTok.has_value()) {
-                    // nie pasuje ten argument, spróbuj następnego argument child
-                    continue;
-                }
-
-                // pasuje → zapisz i przejdź dalej (break z pętli children)
-                NodeCmdArg a{ next_node->parser, parsedTok.value() };
-                stmt_node.args.push_back(std::move(a));
-                cur_node = next_node;
-                matchedArgument = true;
-                break;
-            }
-
-            if (matchedArgument) continue;
-
-            // jeśli są argument children, ale żaden nie pasował => niezgodność
-            if (anyArgumentChild) {
-                //m_idx = start_idx;
-                //return {}; // nie pasuje do żadnej ścieżki
-                error(true, opt->line, opt->col, "Unexpected argument, got '", opt->value.value(), "'!"); 
-            }
-
-            // nie ma żadnej możliwej opcji (nie znaleziono literal ani argument)
-            //m_idx = start_idx;
-            //return {};
-            error(peek().has_value(), opt->line, opt->col, "Found unknown argument '", opt->value.value(), "'!"); 
-        } // koniec while
-        return NodeStmt{ .var = stmt_node };
-    }*/
-
-    /*std::optional<NodeStmtVar> parse_stmt_var() {
-        NodeStmtVar stmt_var = NodeStmtVar { .ident = consume() }; // consume ident
-        consume(); // consume =
-        if (auto expr = parse_expr()) {
-            stmt_var.expr = expr.value();
-        } else {
-            error(peek().has_value(), peek().value().line, peek().value().col, "Invalid Expression");
-        }
-        return stmt_var;
-    }*/
-
-    /*std::optional<NodeStmt> parse_stmt()
-    {   
-        NodeStmt stmt;
-        if (peek().has_value()) {
-            if (peek().value().type == TokenType::ident) {
-                // try parse as registered command
-                if (auto cmd = parse_command()) stmt = cmd.value();
-            }
-            else if (peek().value().type == TokenType::ident && 
-                peek(1).has_value() && peek(1).value().type == TokenType::equals) {
-                    stmt.var = parse_stmt_var().value();
-            } 
-            else {
-                error(true, peek().value().line, peek().value().col, "Unexpected Token '", tokenTypeToString(peek().value().type) ,"'");
-            }
-
-            if (peek().has_value() && peek().value().type == TokenType::new_line || peek().value().type == TokenType::eof) {
-                consume();
-            } else {
-                error(peek().has_value(), peek().value().line, peek().value().col, "Expected 'New Line' after command but got '",peek().value().value.value(),"'");
-            }
-        }
-        return stmt;
-    }*/
-
-    /*std::optional<NodeProg> parse_prog() 
-    {
-        NodeProg prog;
-        while(peek().has_value()) {
-            if (peek().value().type == TokenType::new_line || peek().value().type == TokenType::eof) {
-                consume();
-            }
-            else if (auto stmt = parse_stmt()) {
-                prog.stmts.push_back(stmt.value());
-            } else {
-                error(peek().has_value(), peek().value().line, peek().value().col, "Invalid Statement");
-            }
-        }
-
-        m_idx = 0;
-        return prog;
-    }*/
-
 private:
-    // parsing
+    std::vector<Token> tokens_;
+    SimplifiedCommandRegistry& reg_;
+    size_t pos_;
 
-    // Parse statement
-    std::optional<ASTNode> parseStatement() {
-        if (!peek().has_value()) return std::nullopt;
+    std::unordered_map<std::string, DataType> varTypes_;
 
-        Token tok = peek().value();
+
+
+    // ===== HELPER METHODS =====    
+    
+
+    void skipNewLines() {
+        while(hasTokens() && (canSkip(peek().type) || peek().type == TokenType::END_OF_FILE)) consume();
+    }
+
+    bool canSkip(TokenType type) const {
+        return type == TokenType::NEW_LINE || type == TokenType::SEMI_COLON;
+    }
+
+    bool isComparisonOperator(TokenType type) const {
+        return type == TokenType::LESS ||
+        type == TokenType::GREATER ||
+        type == TokenType::LESS_EQUAL ||
+        type == TokenType::GREATER_EQUAL ||
+        type == TokenType::EQUALS_EQUALS ||
+        type == TokenType::NOT_EQUALS;
+    }
+
+    
+
+    // ===== PARSE LOGIC =====
+
+    std::unique_ptr<ASTNode> parseStatement() {
+        skipNewLines();
+
+        if (!hasTokens()) return nullptr;
+
+        Token tok = peek();
 
         // 1. Variable assignment (x = 5)
-        if (tok.type == TokenType::IDENT && peek(1).has_value() && peek(1)->type == TokenType::EQUALS) { // its checking only for (IDENT =)
-            return parseVariableAssignment();
+        if (tok.type == TokenType::IDENT && peek(1).type == TokenType::EQUALS) {
+            return parseVarDecl();
         }
         
         // 2. Minecraft command (say "hello")
         if (tok.type == TokenType::CMD_KEY) {
-            return parseMinecraftCommand();
+            return parseCommand();
+        }
+
+        // 3. If statement
+        if (tok.type == TokenType::IF) {
+            return parseIf();
+        }
+
+        // 4. While loop
+        if (tok.type == TokenType::WHILE) {
+            return parseWhile();
+        }
+        
+        
+        // 5. Blok { ... }
+        if (tok.type == TokenType::OPEN_BRACE) {
+            return parseScope();
         }
 
         error(true, tok.line, tok.col, "Unknown statement type: ", tokenTypeToString(tok.type));
-        return std::nullopt;
+        return nullptr;
     }
 
 
-    // Parsuje przypisanie zmiennej: x = 5
-    ASTNode parseVariableAssignment() {
-        Token varName = consume();  // np. "myScore"
-        consume();  // konsumuj '='
-        
-        // Parsuj wartość (może być liczba lub inna zmienna)
-        ASTNode value = parseExpression();
-        
-        // TWORZYMY NODE AST!
-        return make_vardecl(varName, std::move(value));
+    std::unique_ptr<ASTNode> parseVarDecl() {
+        Token name = consume(); // consume IDENT
+        consume(); // consume '='
+
+        auto value = parseExpression();
+
+        // save variable
+        if (!name.value.has_value()) error("Encountered variable assignation with unknown name", name);
+        std::string varName = name.value.value();
+        varTypes_[varName] = value->dataType;
+
+        return std::make_unique<VarDeclNode>(name, value->dataType, std::move(value));
     }
 
 
-    // Parse command (just first token is known rest is on user side to be sure its correct)
-    ASTNode parseMinecraftCommand() {
-        Token cmdToken = consume();  // np. "say"
-        std::vector<ASTNode> args;
-        
+    std::unique_ptr<ASTNode> parseCommand() {
+        Token cmdKey = consume(); // consume CMD_KEY
+        auto node = std::make_unique<CommandNode>(cmdKey);
+
         // Zbierz wszystkie argumenty do końca linii
-        while (peek().has_value() && 
-               peek()->type != TokenType::NEW_LINE &&
-               peek()->type != TokenType::END_OF_FILE) {
+        while (hasTokens() && 
+               peek().type != TokenType::NEW_LINE &&
+               peek().type != TokenType::END_OF_FILE) {
             
-            args.push_back(parseExpression());
+            node->args.push_back(parseExpression());
         }
-        
-        // Skip newline
-        if (peek().has_value() && peek()->type == TokenType::NEW_LINE) {
-            consume();
-        }
-        
-        // TWORZYMY NODE AST!
-        return make_command(cmdToken, std::move(args));
+
+        skipNewLines();
+        return node;
     }
 
+
+    std::unique_ptr<ASTNode> parseIf() {
+        consume(); // consume 'if'
+        expect(TokenType::OPEN_PAREN, "after 'if'");
+        consume(); // consume '('
+        
+        auto condition = parseExpression();
+
+        expect(TokenType::CLOSE_PAREN, "after if condition");
+        consume(); // consume ')'
+
+        auto thenBranch = parseStatement();
+
+        std::unique_ptr<ASTNode> elseBranch = nullptr;
+        if (hasTokens() && peek().type == TokenType::ELSE) {
+            consume(); // consume 'else'
+
+            if (!hasTokens()) {
+                error(true, peek().line, peek().col, "Expected 'if' or scope after 'else'");
+            }
+
+            if (peek().type == TokenType::OPEN_BRACE) {
+                elseBranch = parseStatement();
+            } else if (peek().type == TokenType::IF) {
+                elseBranch = parseIf();
+            } else {
+                error(true, peek().line, peek().col, "Expected 'if' or scope after 'else', but got ", tokenTypeToString(peek().type));
+            }
+        }
+
+        return std::make_unique<IfNode>(
+            std::move(condition), 
+            std::move(thenBranch), 
+            std::move(elseBranch)
+        );
+    }
+
+
+    std::unique_ptr<ASTNode> parseWhile() {
+        consume(); // consume 'while'
+        expect(TokenType::OPEN_PAREN, "after 'while'");
+        consume(); // consume '('
+        
+        auto condition = parseExpression();
+
+        expect(TokenType::CLOSE_PAREN, "after while condition");
+        consume(); // consume ')'
+
+        auto body = parseStatement();
+
+        return std::make_unique<WhileNode>(
+            std::move(condition), 
+            std::move(body)
+        );
+    }
+
+    std::unique_ptr<ASTNode> parseScope() {
+        consume(); // consume '{'
+        auto scope = std::make_unique<ScopeNode>();
+
+        while (hasTokens() && peek().type != TokenType::CLOSE_BRACE) {
+            if (auto stmt = parseStatement()) {
+                scope->statements.push_back(std::move(stmt));
+            }/* else {
+                error("Failed to parse statement");
+            }*/
+           skipNewLines(); // needed -> witchout this there could be Tokens (NEW_LINE, CLOSE_BRACE) and becouse parseStatement skips new Lines it would fail becouse it doesnt know '}'
+        }
+
+        expect(TokenType::CLOSE_BRACE, "at end of the scope", peek(-1).line, peek(-1).col);
+        consume(); // consume '}'
+
+        return scope;
+    }
+
+
+
+
+
+
+    // ===== EXPRESSION PARSE LOGIC =====
+
+    std::unique_ptr<ASTNode> parseExpression() {
+        return parseComparison();  // Nowa funkcja która parsuje pełne wyrażenia
+    }
+
+    std::unique_ptr<ASTNode> parseComparison() {
+        auto left = parseAdditive();
+        
+        while (hasTokens() && isComparisonOperator(peek().type)) {
+            Token op = consume(); // consume operator
+            auto right = parseAdditive();
+            DataType type = inferBinaryOpType(op.type, left->dataType, right->dataType);
+
+            left = std::make_unique<BinaryOpNode>(op, type, std::move(left), std::move(right));
+        }
+        
+        return left;
+    }
+
+    std::unique_ptr<ASTNode> parseAdditive() {
+        auto left = parseMultiplicative();
+        
+        while (hasTokens() && 
+               (peek().type == TokenType::PLUS || 
+                peek().type == TokenType::MINUS)) {
+            
+            Token op = consume();
+            auto right = parseMultiplicative();
+            DataType type = inferBinaryOpType(op.type, left->dataType, right->dataType);
+
+            left = std::make_unique<BinaryOpNode>(op, type, std::move(left), std::move(right));
+        }
+        
+        return left;
+    }
+
+    std::unique_ptr<ASTNode> parseMultiplicative() {
+        auto left = parsePrimary();
+        
+        while (hasTokens() && 
+               (peek().type == TokenType::MULTIPLY || 
+                peek().type == TokenType::DIVIDE)) {
+            
+            Token op = consume();
+            auto right = parsePrimary();
+            DataType type = inferBinaryOpType(op.type, left->dataType, right->dataType);
+
+            left = std::make_unique<BinaryOpNode>(op, type, std::move(left), std::move(right));
+        }
+        
+        return left;
+    }
 
     // Parsuje wyrażenie (liczba, string, zmienna)
-    ASTNode parseExpression() {
-        if (!peek().has_value()) error(false, 0, 0, "Expected expression");
+    std::unique_ptr<ASTNode> parsePrimary() {
+        if (!hasTokens()) error(false, 0, 0, "Expected expression");
         
         Token tok = consume();
         
-        // Sprawdź typ tokena i utwórz odpowiedni node
+        // Literały, identyfikatory, komendy
         if (tok.type == TokenType::INT_LIT ||
             tok.type == TokenType::FLOAT_LIT ||
             tok.type == TokenType::STRING_LIT ||
-            tok.type == TokenType::CMD_KEY ||       // without this `scoreboard players set player test 1` it would create error bc test is CMD_KEY as it is also separate command - the same thing would happen with /execute
+            // tok.type == TokenType::CMD_KEY ||
+            tok.type == TokenType::TRUE ||
+            tok.type == TokenType::FALSE ||
             tok.type == TokenType::IDENT) {
+
+            if (tok.type == TokenType::IDENT) {
+                // check if variable exists
+                std::string varName = tok.value.value();
+                if (varTypes_.find(varName) == varTypes_.end()) error("Tried to use unassigned variable (" + varName + ") in expression!", tok);
+
+                // retrive variable
+                DataType type = varTypes_[varName];
+                return std::make_unique<ExprNode>(tok, type);
+            }
+
+            if (tok.type == TokenType::INT_LIT) return std::make_unique<ExprNode>(tok, DataType::INT);
+            if (tok.type == TokenType::FLOAT_LIT) return std::make_unique<ExprNode>(tok, DataType::FLOAT);
+            if (tok.type == TokenType::STRING_LIT) return std::make_unique<ExprNode>(tok, DataType::STRING);
+            if (tok.type == TokenType::TRUE || tok.type == TokenType::FALSE) return std::make_unique<ExprNode>(tok, DataType::BOOL);
+
+            error ("Unreachable");
+            return std::make_unique<ExprNode>(tok, DataType::UNKNOWN);
+        }
+
+        // Nawiasy
+        if (tok.type == TokenType::OPEN_PAREN) {
+            auto expr = parseExpression();
             
-            // TWORZYMY NODE AST!
-            return make_expr(tok);
+            expect(TokenType::CLOSE_PAREN, "in expression");
+            consume(); // consume ')'
+            
+            return expr;
+        }
+
+        // Unary minus (ex. -x )
+        if (tok.type == TokenType::MINUS) {
+            auto right = parsePrimary();
+
+            if (right->dataType != DataType::INT && right->dataType != DataType::FLOAT) {
+                error("Unary minus can only be applied to numbers", tok);
+            }
+
+            // zamień na to (0 - x)
+            return std::make_unique<BinaryOpNode>(
+                Token{TokenType::MINUS, "-", tok.line, tok.col}, 
+                right->dataType,
+                std::make_unique<ExprNode>(Token{TokenType::INT_LIT, "0", tok.line, tok.col}, DataType::INT),
+                std::move(right)
+            );
+        }
+
+        error(true, tok.line, tok.col, "Invalid expression");
+        return nullptr;
+    }
+
+    // DataType helper
+    DataType inferBinaryOpType(TokenType op, DataType leftType, DataType rightType) {
+        // Dla operatorów arytmetycznych
+        if (op == TokenType::PLUS || op == TokenType::MINUS ||
+            op == TokenType::MULTIPLY || op == TokenType::DIVIDE) {
+            
+            // Reguły promocji typów
+            if (leftType == DataType::FLOAT || rightType == DataType::FLOAT) {
+                return DataType::FLOAT;  // float + int → float
+            }
+            if (leftType == DataType::INT && rightType == DataType::INT) {
+                return DataType::INT;    // int + int → int
+            }
+            if (leftType == DataType::STRING && op == TokenType::PLUS) {
+                return DataType::STRING; // string + string → string
+            }
+            return DataType::UNKNOWN;
         }
         
-        error(true, tok.line, tok.col, "Invalid expression token: ", tokenTypeToString(tok.type));
-        return make_expr(Token{});
-    }
-
-
-    // Token consume/peek implementation
-    inline std::optional<Token> peek(int offset = 0) const 
-    {
-        if (m_idx + offset >= m_tokens.size()) {
-            return {};
+        // Dla operatorów porównania
+        if (op == TokenType::EQUALS_EQUALS || op == TokenType::NOT_EQUALS ||
+            op == TokenType::LESS || op == TokenType::GREATER ||
+            op == TokenType::LESS_EQUAL || op == TokenType::GREATER_EQUAL) {
+            
+            return DataType::BOOL;  // zawsze bool
         }
-        return m_tokens.at(m_idx + offset);
+        
+        return DataType::UNKNOWN;
     }
 
-    inline Token consume() {
-        // first get at m_idx then increment m_idx by 1
-        return m_tokens.at(m_idx++);
+    
+    // ===== TOKEN PEEK/CONSUME LOGIC =====
+    bool hasTokens() const {
+        return pos_ < tokens_.size();
     }
 
+    Token peek(size_t offset = 0) const {
+        if (pos_ + offset >= tokens_.size()) {
+            return Token{TokenType::END_OF_FILE, "", 0, 0};
+        }
+        return tokens_[pos_ + offset];
+    }
 
-    // helpers
+    Token consume() {
+        if (!hasTokens()) error(false, 0, 0, "Unexpected end of file");
+        // first get at pos_ then increment pos_ by 1
+        return tokens_[pos_++];
+    }
 
-    // helpers: bezpieczny peek/consume pozostają
-    //inline bool tokensRemain() const { return peek().has_value(); }
-
-    // zwraca tekst tokena (value) albo pusty string
-    /*static std::string token_text(const Token& t) {
-        return t.value.value_or(std::string{});
-    }*/
-
+    // ===== REPORT METHODS =====
 
     template<typename... Args>
     [[noreturn]] void error(bool has_value, size_t line, size_t col, Args&&... args) {
@@ -381,14 +394,29 @@ private:
         if (has_value) {
             std::cerr << "Parser error: " << oss.str() << " at line " << line << ", column " << col << std::endl;
         } else {
-            std::cerr << "Parser error: " << oss.str() << " at line " << "UNKNOWN" << ", column " << "UNKNOWN" << std::endl;
+            std::cerr << "Parser error: " << oss.str() << std::endl;
         }
         exit(EXIT_FAILURE);
     }
 
-    // variables
+    [[noreturn]] void error(const std::string& msg, Token token = Token{}) {
+        std::cerr << "Parser error: " << msg;
+        if (token.type != TokenType::END_OF_FILE) {
+            std::cerr << " at line " << token.line << ", col " << token.col;
+        }
+        std::cerr << std::endl;
+        exit(EXIT_FAILURE);
+    }
 
-    const std::vector<Token> m_tokens;
-    size_t m_idx = 0;
-    SimplifiedCommandRegistry& m_reg;
+    void expect(TokenType expected, const std::string& context) {
+        if (!hasTokens() || peek().type != expected) {
+            error("Expected '" + std::string(tokenTypeToString(expected)) + "' " + context);
+        }
+    }
+
+    void expect(TokenType expected, const std::string& context, size_t line, size_t col) {
+        if (!hasTokens() || peek().type != expected) {
+            error("Expected '" + std::string(tokenTypeToString(expected)) + "' " + context, Token{.line = line, .col = col});
+        }
+    }
 };

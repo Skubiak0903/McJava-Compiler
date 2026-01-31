@@ -1,0 +1,41 @@
+Scope {
+  VarDecl: x, Type: Integer
+    Expr: 5 [Int], Type: Integer
+
+  VarDecl: x, Type: Integer
+    BinaryOp: + [PLUS (+)],Type: Integer
+      Expr: x [IDENTIFIER], Type: Integer
+      Expr: 5 [Int], Type: Integer
+
+  IfStmt
+    BinaryOp: > [GREATER (>)],Type: Bool
+      Expr: x [IDENTIFIER], Type: Integer
+      Expr: 5 [Int], Type: Integer
+    Scope {
+      Command: say
+        Expr: X is greater than 5 [String], Type: String
+
+    }
+
+  else:
+    IfStmt
+      BinaryOp: == [EQUAL (==)],Type: Bool
+        Expr: x [IDENTIFIER], Type: Integer
+        Expr: 5 [Int], Type: Integer
+      Scope {
+        Command: say
+          Expr: X is equal to 5 [String], Type: String
+
+      }
+
+    else:
+      Scope {
+        Command: say
+          Expr: X is less than 5 [String], Type: String
+
+      }
+
+
+
+}
+

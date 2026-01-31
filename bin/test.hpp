@@ -1,5 +1,5 @@
 // main.cpp
-#include "CommandRegistry.hpp"
+/*#include "CommandRegistry.hpp"
 #include <iostream>
 
 int main(int argc, char** argv) {
@@ -39,3 +39,4 @@ int main(int argc, char** argv) {
 
     return 0;
 }
+*/

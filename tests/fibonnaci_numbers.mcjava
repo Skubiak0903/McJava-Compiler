@@ -1,0 +1,16 @@
+n = 10000; // number of iterations
+i = 1;
+firstTerm = 0;
+secondTerm = 1;
+
+say "Fibonacci Numbers (" n " iterations):"
+
+while (i <= n) {
+    say firstTerm
+
+    nextTerm = firstTerm + secondTerm;
+    firstTerm = secondTerm;
+    secondTerm = nextTerm;
+
+    i = i+1;
+}

@@ -4,12 +4,16 @@
 #include <sstream>
 #include <fstream>
 #include <unordered_map>
+#include <filesystem>
 
 #include "./tokenization.hpp"
-#include "./generation.cpp"
+#include "./debug_generator.cpp"
+#include "./generator.cpp"
 #include "./parser.cpp"
 
 #include "./registries/SimplifiedCommandRegistry.hpp"
+
+namespace fs = std::filesystem;
 
 int main(int argc, char* argv[])
 {   
@@ -22,6 +26,11 @@ int main(int argc, char* argv[])
     // Get Arguments
     bool dumpTokens = false;
     bool dumpCmds = false;
+    bool dumpParseTree = false;
+
+    std::string mcdoc_path  = "./mcdoc/commands.json";
+    std::string dp_prefix   = "mcjava";
+    std::string dp_path     = "";
 
     std::unordered_map<std::string,std::string> args;
     for (int i = 2; i < argc; i++) {
@@ -40,13 +49,31 @@ int main(int argc, char* argv[])
     }
 
     // Match arguments
-    if (args.find("dump-tokens") != args.end()) { // contains should work
+    if (args.find("dump-tokens") != args.end()) {
         dumpTokens = true;
     }
 
-    if (args.find("dump-cmds") != args.end()) { // contains should work
+    if (args.find("dump-cmds") != args.end()) {
         dumpCmds = true;
     }
+
+    if (args.find("dump-parse-tree") != args.end()) {
+        dumpParseTree = true;
+    }
+
+    if (args.find("mcdoc-path") != args.end()) {
+        mcdoc_path = args["mcdoc-path"];
+    }
+
+    if (args.find("dp-prefix") != args.end()) {
+        dp_prefix = args["dp-prefix"];
+    }
+
+    if (args.find("dp-path") != args.end()) {
+        dp_path = args["dp-path"];
+    }
+
+
 
     // First time measurement
     clock_t tStart = clock();
@@ -67,7 +94,7 @@ int main(int argc, char* argv[])
     // load simplified commands
     SimplifiedCommandRegistry reg;
     std::string err;
-    if (!reg.loadFromFile("./../mcdoc/commands.json", &err)) { std::cerr << "cmd load error: " << err << "\n"; return EXIT_FAILURE; }
+    if (!reg.loadFromFile(mcdoc_path, &err)) { std::cerr << "cmd load error: " << err << "\n"; return EXIT_FAILURE; }
 
     if (dumpCmds) {
         std::fstream file(filename + "-cmds.dump", std::ios::out);
@@ -109,16 +136,36 @@ int main(int argc, char* argv[])
         return EXIT_FAILURE;
     }
 
+    if (dumpParseTree) {
+        std::ofstream file(filename + "-parser-tree.dump", std::ios::out);
+        if (file.is_open()) {
+            DebugGenerator debugGen(file);
+            ast->generate(debugGen);
+            file.close();
+        }
+
+    }
+
     // end of parsing time measurement
     clock_t tEndPar = clock();
 
     // Generation
-    Generator generator;
     {   
-        std::fstream file(filename + ".mcfunction", std::ios::out);
-        file << generator.generate(*ast);
+        try {
+            fs::create_directory(filename);
+        } catch (const fs::filesystem_error& e) {
+            std::cerr << "FILE ERROR: " << e.what() << '\n';
+        }
+
+        fs::path path(filename);
+        std::cout << "Path: " << path << "\n";
+        FunctionGenerator funcGen(path, dp_prefix, dp_path);
+        ast->generate(funcGen);
     }
 
+    // // create folder
+    // 
+    
     // end of generation time measurement
     clock_t tEndGen = clock();
 

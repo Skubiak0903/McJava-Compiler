@@ -1,113 +1,210 @@
 // ast.hpp
 #pragma once
 
-#include <variant>
-#include <vector>
 #include <string>
+#include <optional>
+#include <vector>
+#include <memory>
+#include <iostream>
+
 #include "tokenization.hpp"
+#include "visitor.hpp"
+#include <any>
 
 // ----------------------------------------------------
-// NODE TYPES USING VARIANT + TEMPLATES
+// PROSTE AST Z DZIEDZICZENIEM (jak w Javie!)
 // ----------------------------------------------------
 
-template<typename... Ts>
-struct NodeVariant : std::variant<Ts...> {
-    using std::variant<Ts...>::variant;
+
+enum class DataType {
+    INT, FLOAT, BOOL, STRING, UNKNOWN
+};
+
+// Podstawowa klasa AST (jak interface w Javie)
+class ASTNode {
+public:
+    virtual ~ASTNode() = default;
+
+    template<typename T>
+    T generate(ASTVisitor<T>& visitor) const {
+        return std::any_cast<T>(accept(visitor));
+    }
+
+    // Overload for void-result visitors so we don't attempt std::any_cast<void>.
+    void generate(ASTVisitor<void>& visitor) const {
+        accept(visitor);
+    }
+
+    DataType dataType = DataType::UNKNOWN;
+
+protected:
+    // Nodes implement this to perform dynamic dispatch; returns a type-erased result.
+    virtual std::any accept(ASTVisitorBase& visitor) const = 0;
+};
+
+inline std::string dataTypeToString(DataType type) {
+    switch (type)
+    {
+
+    case DataType::INT  : return "Integer";
+    case DataType::FLOAT    : return "Float";
+    case DataType::BOOL     : return "Bool";
+    case DataType::STRING   : return "String";
+    case DataType::UNKNOWN  : return "Unknown";
+    default                 : return "[UNKNOWN]";
+
+    }
+}
+
+
+
+// ===== PODKLASY =====
+
+
+/*
+    struct CommandData {
+        Token cmd;
+        std::vector<ASTNode> args;
+    };
+*/
+class CommandNode : public ASTNode {
+public:
+    Token command;
+    std::vector<std::unique_ptr<ASTNode>> args;
     
-    template<typename Visitor>
-    auto visit(Visitor&& vis) {
-        return std::visit(std::forward<Visitor>(vis), *this);
+    CommandNode(Token cmd, std::vector<std::unique_ptr<ASTNode>> args = {})
+        : command(cmd), args(std::move(args)) {}
+
+    std::any accept(ASTVisitorBase& visitor) const override {
+        return visitor.visitCommand(*this);
     }
 };
 
-// Forward declarations for circular dependency
-struct CommandData;
-struct VarDeclData;
-struct ExprData;
-struct BinaryOpData;
 
-// MAIN NODE TYPE - DODAJESZ TYLKO TU NOWE TYPY!
-using ASTNode = NodeVariant<
-    CommandData,
-    VarDeclData,
-    ExprData,
-    BinaryOpData
-    // DODAJ TU NOWE TYPY! np.:
-    // IfStmtData,
-    // WhileLoopData,
-    // FunctionCallData
->;
-
-// Concrete node types (now can use ASTNode)
-struct CommandData {
-    Token cmd;
-    std::vector<ASTNode> args;
-};
-
-struct VarDeclData {
+/*
+    struct VarDeclData {
+        Token name;
+        std::unique_ptr<ASTNode> value;
+        //DataType type;
+    };
+*/
+class VarDeclNode : public ASTNode {
+public:
     Token name;
     std::unique_ptr<ASTNode> value;
+    
+    VarDeclNode(Token name, DataType type, std::unique_ptr<ASTNode> value)
+        : name(name), value(std::move(value)) {
+        this->dataType = type;
+    }
+    
+    std::any accept(ASTVisitorBase& visitor) const override {
+        return visitor.visitVarDecl(*this);
+    }
 };
 
-struct ExprData {
+
+/*
+    struct ExprData {
+        Token token;
+        //DataType type;
+    };
+*/
+class ExprNode : public ASTNode {
+public:
     Token token;
+    
+    ExprNode(Token token, DataType type)
+        : token(token) {
+        this->dataType = type;
+    }
+    
+    std::any accept(ASTVisitorBase& visitor) const override {
+        return visitor.visitExpr(*this);
+    }
 };
 
-struct BinaryOpData {
+
+/*
+    struct BinaryOpData {
+        Token op;
+        std::unique_ptr<ASTNode> left;
+        std::unique_ptr<ASTNode> right;
+        //DataType type;
+    };
+*/
+class BinaryOpNode : public ASTNode {
+public:
     Token op;
     std::unique_ptr<ASTNode> left;
     std::unique_ptr<ASTNode> right;
-};
-
-// ----------------------------------------------------
-// EASY NODE CREATION
-// ----------------------------------------------------
-
-inline ASTNode make_command(Token cmd, std::vector<ASTNode> args = {}) {
-    return CommandData{cmd, std::move(args)};
-}
-
-inline ASTNode make_vardecl(Token name, ASTNode value) {
-    return VarDeclData{name, std::make_unique<ASTNode>(std::move(value))};
-}
-
-inline ASTNode make_expr(Token token) {
-    return ExprData{token};
-}
-
-inline ASTNode make_binary_op(Token op, ASTNode left, ASTNode right) {
-    return BinaryOpData{op, 
-                        std::make_unique<ASTNode>(std::move(left)), 
-                        std::make_unique<ASTNode>(std::move(right))};
-}
-
-
-// ----------------------------------------------------
-// VISITOR TEMPLATE FOR GENERATION
-// ----------------------------------------------------
-
-class ASTVisitor {
-public:
-    virtual void visit_command(const CommandData& cmd) = 0;
-    virtual void visit_vardecl(const VarDeclData& decl) = 0;
-    virtual void visit_expr(const ExprData& expr) = 0;
-    virtual void visit_binary_op(const BinaryOpData& op) = 0;
-};
-
-// Helper to apply visitor to node
-inline void apply_visitor(const ASTNode& node, ASTVisitor& visitor) {
-    std::visit([&](auto&& arg) {
-        using T = std::decay_t<decltype(arg)>;
-        
-        if constexpr (std::is_same_v<T, CommandData>) {
-            visitor.visit_command(arg);
-        } else if constexpr (std::is_same_v<T, VarDeclData>) {
-            visitor.visit_vardecl(arg);
-        } else if constexpr (std::is_same_v<T, ExprData>) {
-            visitor.visit_expr(arg);
-        } else if constexpr (std::is_same_v<T, BinaryOpData>) {
-            visitor.visit_binary_op(arg);
+    
+    BinaryOpNode(Token op, DataType type, std::unique_ptr<ASTNode> left, std::unique_ptr<ASTNode> right)
+        : op(op), left(std::move(left)), right(std::move(right)) {
+            this->dataType = type;
         }
-        // DODAJESZ TYLKO JEDEN IF_CONSTEXPR DLA NOWEGO TYPU!
-    }, node);
-}
+    
+    std::any accept(ASTVisitorBase& visitor) const override {
+        return visitor.visitBinaryOp(*this);
+    }
+};
+
+
+/*
+    struct IfStmtData {
+        std::unique_ptr<ASTNode> condition;
+        std::unique_ptr<ASTNode> thenBranch;  // zawsze musi być
+        std::unique_ptr<ASTNode> elseBranch;  // może być nullptr
+    };
+*/
+class IfNode : public ASTNode {
+public:
+    std::unique_ptr<ASTNode> condition;
+    std::unique_ptr<ASTNode> thenBranch;
+    std::unique_ptr<ASTNode> elseBranch;  // can be nullptr
+    
+    IfNode(std::unique_ptr<ASTNode> condition, std::unique_ptr<ASTNode> thenBranch, std::unique_ptr<ASTNode> elseBranch)
+        : condition(std::move(condition)), thenBranch(std::move(thenBranch)), elseBranch(std::move(elseBranch)) {}
+    
+    std::any accept(ASTVisitorBase& visitor) const override {
+        return visitor.visitIf(*this);
+    }
+};
+
+
+/*
+    struct WhileLoopData {
+        std::unique_ptr<ASTNode> condition;
+        std::unique_ptr<ASTNode> body;
+    };
+*/
+class WhileNode : public ASTNode {
+public:
+    std::unique_ptr<ASTNode> condition;
+    std::unique_ptr<ASTNode> body;
+    
+    WhileNode(std::unique_ptr<ASTNode> condition, std::unique_ptr<ASTNode> body)
+        : condition(std::move(condition)), body(std::move(body)) {}
+    
+    std::any accept(ASTVisitorBase& visitor) const override {
+        return visitor.visitWhile(*this);
+    }
+};
+
+
+/*
+    struct ScopeData {
+        std::vector<ASTNode> statements;
+    };  
+*/
+class ScopeNode : public ASTNode {
+public:
+    std::vector<std::unique_ptr<ASTNode>> statements;
+    
+    ScopeNode(std::vector<std::unique_ptr<ASTNode>> statements = {})
+        : statements(std::move(statements)) {}
+    
+    std::any accept(ASTVisitorBase& visitor) const override {
+        return visitor.visitScope(*this);
+    }
+};

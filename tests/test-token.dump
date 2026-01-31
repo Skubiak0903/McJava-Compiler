@@ -1,0 +1,48 @@
+IDENTIFIER -> x
+EQUALS (=) -> =
+Int -> 5
+; -> ;
+NEW_LINE
+NEW_LINE
+IDENTIFIER -> x
+EQUALS (=) -> =
+IDENTIFIER -> x
+PLUS (+) -> +
+Int -> 5
+; -> ;
+NEW_LINE
+NEW_LINE
+if
+( -> (
+IDENTIFIER -> x
+GREATER (>) -> >
+Int -> 5
+) -> )
+{ -> {
+NEW_LINE
+COMMAND_KEY -> say
+String -> X is greater than 5
+NEW_LINE
+} -> }
+else
+if
+( -> (
+IDENTIFIER -> x
+EQUAL (==) -> ==
+Int -> 5
+) -> )
+{ -> {
+NEW_LINE
+COMMAND_KEY -> say
+String -> X is equal to 5
+NEW_LINE
+} -> }
+else
+{ -> {
+NEW_LINE
+COMMAND_KEY -> say
+String -> X is less than 5
+NEW_LINE
+} -> }
+NEW_LINE
+END_OF_FILE

@@ -11,44 +11,115 @@
 #include "./registries/SimplifiedCommandRegistry.hpp"
 
 enum class TokenType {
-    //litelals
-    INT_LIT,
-    FLOAT_LIT,
-    STRING_LIT,
-
-    // other
-    SEMI_COLON,
-    OPEN_PAREN,
-    CLOSE_PAREN,
-    EQUALS,
-
-    // dynamic tokens
-    IDENT,
-    CMD_KEY,
-
-    // special
-    NEW_LINE,
-    END_OF_FILE,
+    // Literały
+    INT_LIT, FLOAT_LIT, STRING_LIT,
+    
+    // Operatory
+    PLUS, MINUS, MULTIPLY, DIVIDE,
+    EQUALS, EQUALS_EQUALS, NOT_EQUALS,
+    LESS, GREATER, LESS_EQUAL, GREATER_EQUAL,
+    
+    // Nawiasy
+    OPEN_PAREN, CLOSE_PAREN,
+    OPEN_BRACE, CLOSE_BRACE,
+    OPEN_BRACKET, CLOSE_BRACKET,
+    
+    // Interpunkcja
+    SEMI_COLON, COMMA, DOT,
+    
+    // Słowa kluczowe
+    WHILE, FOR, IF, ELSE, RETURN, TRUE, FALSE,
+    
+    // Dynamiczne
+    IDENT, CMD_KEY,
+    
+    // Specjalne
+    NEW_LINE, END_OF_FILE,
 };
 
-struct Token {
-    TokenType type;
-    std::optional<std::string> value {};
-    size_t line;
-    size_t col;
+const inline std::unordered_map<std::string, TokenType> KEYWORDS = {
+    {"while", TokenType::WHILE},
+    {"for", TokenType::FOR},
+    {"if", TokenType::IF},
+    {"else", TokenType::ELSE},
+    {"return", TokenType::RETURN},
+    {"true", TokenType::TRUE},
+    {"false", TokenType::FALSE},
 };
 
-std::string tokenTypeToString(TokenType type) {
+const inline std::unordered_map<char, TokenType> CHARS = {
+    {'+', TokenType::PLUS},
+    {'-', TokenType::MINUS},
+    {'*', TokenType::MULTIPLY},
+    {'/', TokenType::DIVIDE},
+
+    {'=', TokenType::EQUALS},
+    {'<', TokenType::LESS},
+    {'>', TokenType::GREATER},
+
+    {'(', TokenType::OPEN_PAREN},
+    {')', TokenType::CLOSE_PAREN},
+    {'{', TokenType::OPEN_BRACE},
+    {'}', TokenType::CLOSE_BRACE},
+    {'[', TokenType::OPEN_BRACKET},
+    {']', TokenType::CLOSE_BRACKET},
+
+    {';', TokenType::SEMI_COLON},
+    {',', TokenType::COMMA},
+    {'.', TokenType::DOT},
+};
+
+const inline std::unordered_map<std::string, TokenType> DOUBLE_CHARS = {
+    {"==", TokenType::EQUALS_EQUALS},
+    {"!=", TokenType::NOT_EQUALS},
+    {"<=", TokenType::LESS_EQUAL},
+    {">=", TokenType::GREATER_EQUAL},
+};
+
+
+
+inline std::string tokenTypeToString(TokenType type) {
     switch(type) {
         //litelals
         case TokenType::INT_LIT : return "Int";
         case TokenType::FLOAT_LIT : return "Float"; 
         case TokenType::STRING_LIT : return "String";
         
-        // other
-        case TokenType::SEMI_COLON : return ";";
+        // Operatory
+        case TokenType::PLUS : return "PLUS (+)";
+        case TokenType::MINUS : return "MINUS (-)";
+        case TokenType::MULTIPLY : return "MULTIPLY (*)";
+        case TokenType::DIVIDE : return "DIVIDE (/)";
+        case TokenType::EQUALS : return "EQUALS (=)";
+        case TokenType::EQUALS_EQUALS : return "EQUAL (==)";
+        case TokenType::NOT_EQUALS : return "NOT EQUAL (!=)";
+        case TokenType::LESS : return "LESS (<)";
+        case TokenType::GREATER : return "GREATER (>)";
+        case TokenType::LESS_EQUAL : return "LESS OR EQUAL (<=)";
+        case TokenType::GREATER_EQUAL : return "GREATER OR EQUAL (>=)";
+
+        // Nawiasy
         case TokenType::OPEN_PAREN : return "(";
         case TokenType::CLOSE_PAREN : return ")";
+        case TokenType::OPEN_BRACE : return "{";
+        case TokenType::CLOSE_BRACE : return "}";
+        case TokenType::OPEN_BRACKET : return "[";
+        case TokenType::CLOSE_BRACKET : return "]";
+        
+        // Interpunkcja
+        case TokenType::SEMI_COLON : return ";";
+        case TokenType::COMMA : return ",";
+        case TokenType::DOT : return ".";
+
+        
+        // Słowa kluczowe
+        case TokenType::WHILE : return "while";
+        case TokenType::FOR : return "for";
+        case TokenType::IF : return "if";
+        case TokenType::ELSE : return "else";
+        case TokenType::RETURN : return "return";
+        case TokenType::TRUE : return "true";
+        case TokenType::FALSE : return "false";
 
         // dynamic tokens
         case TokenType::IDENT : return "IDENTIFIER";
@@ -61,6 +132,13 @@ std::string tokenTypeToString(TokenType type) {
     }
 }
 
+struct Token {
+    TokenType type;
+    std::optional<std::string> value {};
+    size_t line;
+    size_t col;
+};
+
 class Tokenizer {
 public:
     inline explicit Tokenizer(const std::string src, SimplifiedCommandRegistry& registry)
@@ -71,28 +149,46 @@ public:
         std::vector<Token> tokens;
         std::string buf;
         while(peek().has_value()) {
-            if (std::isalpha(peek().value())) {
+
+            char value = peek().value();
+
+            // keywords & idents
+            if (std::isalpha(value)) {
                 buf.push_back(consume());
                 while (peek().has_value() &&
                     (std::isalnum(peek().value()) || peek().value() == '_' || peek().value() == '-')) {
                     buf.push_back(consume());
                 }
+
+                // check if word is keyword
+                auto it = KEYWORDS.find(buf);
+                if (it != KEYWORDS.end()) {
+                    tokens.push_back({ .type = it->second, .line = line, .col = col });
+                    
+                    buf.clear();
+                    continue;
+                }
+
                 if (m_reg.isValid(buf)) {
                     tokens.push_back({.type = TokenType::CMD_KEY, .value = buf, .line = line, .col = col });
                 } else {
                     tokens.push_back({.type = TokenType::IDENT, .value = buf, .line = line, .col = col });
                 } 
+
                 buf.clear();
+                continue;
             }
-            else if (std::isdigit(peek().value()) ||
-                    (peek().value() == '-' && (std::isdigit(peek(1).value_or('0')) || peek(1).value_or('\0') == '.')) ||
-                    peek().value() == '.')
+
+            // numbers
+            if (std::isdigit(value) ||
+                    (value == '-' && (std::isdigit(peek(1).value_or('0')) || peek(1).value_or('\0') == '.')) ||
+                    value == '.')
             {
                 std::string buf;       // pierwsza liczba
                 bool isFloat = false;
 
                 // minus opcjonalny
-                if (peek().value() == '-') buf.push_back(consume());
+                if (value == '-') buf.push_back(consume());
 
                 // część całkowita
                 while (peek().has_value() && std::isdigit(peek().value()))
@@ -118,8 +214,12 @@ public:
                                     .value = buf,
                                     .line = line, .col = col });
                 }
+
+                continue;
             }
-            else if (peek().value() == '"' || peek().value() == '\'') {
+
+            // strings 
+            if (value == '"' || value == '\'') {
                 char quote = consume(); // " lub '
                 while (peek().has_value() && peek().value() != quote) {
                     char c = consume();
@@ -155,55 +255,70 @@ public:
                 buf.clear();
                 continue;
             }
-            // komentarze
-            else if (peek().value() == '#' && col == 0) {
+
+            // comments
+            if (value == '#' && col == 0) {
                 consume();
                 while (peek().has_value() && peek().value() != '\n') {
                     consume();
                 }
                 continue;
             }
-            else if (peek().value() == '/' && peek(1).has_value() && peek(1).value() == '/') {
-                consume();
-                consume();
-                while (peek().has_value() && peek().value() != '\n') {
+
+            if (peek(1).has_value()) {
+                char value2 = peek(1).value();
+
+                if (value == '/' && value2 == '/') {
                     consume();
-                }
-                continue;
-            }
-            else if (peek().value() == '/' && peek(1).has_value() && peek(1).value() == '*') {
-                //std::cout << "Entered big comment section! at line " << line << ", column " << col << std::endl;
-                consume();
-                consume();
-                while (!(peek().has_value() && peek().value() == '*' && peek(1).has_value() && peek(1).value() == '/')) {
                     consume();
+                    while (peek().has_value() && peek().value() != '\n') {
+                        consume();
+                    }
+                    continue;
                 }
+    
+                if (value == '/' && value2 == '*') {
+                    //std::cout << "Entered big comment section! at line " << line << ", column " << col << std::endl;
+                    consume();
+                    consume();
+                    while (!(peek().has_value() && peek().value() == '*' && peek(1).has_value() && peek(1).value() == '/')) {
+                        consume();
+                    }
+                    consume();
+                    consume();
+                    //std::cout << "Exited big comment section! at line " << line << ", column " << col << std::endl;
+                    continue;
+                }
+    
+                // check for double char tokens
+                std::string doubleChar;
+                doubleChar += value;
+                doubleChar += value2;
+
+                auto it = DOUBLE_CHARS.find(doubleChar);
+                if (it != DOUBLE_CHARS.end()) {
+                    consume();
+                    consume();
+                    
+                    tokens.push_back({ .type = it->second, .value = doubleChar, .line = line, .col = col });
+                    
+                    buf.clear();
+                    continue;
+                }
+            }
+
+            // check for single char tokens
+            auto it = CHARS.find(value);
+            if (it != CHARS.end()) {
                 consume();
-                consume();
-                //std::cout << "Exited big comment section! at line " << line << ", column " << col << std::endl;
+                
+                std::string str(1, value);
+                tokens.push_back({ .type = it->second, .value = str, .line = line, .col = col });
                 continue;
             }
-            else if (peek().value() == ';') {
-                consume();
-                tokens.push_back({ .type = TokenType::SEMI_COLON, .line = line, .col = col });
-                continue;
-            }
-            else if (peek().value() == '(') {
-                consume();
-                tokens.push_back({ .type = TokenType::OPEN_PAREN, .line = line, .col = col });
-                continue;
-            }
-            else if (peek().value() == ')') {
-                consume();
-                tokens.push_back({ .type = TokenType::CLOSE_PAREN, .line = line, .col = col });
-                continue;
-            }
-            else if (peek().value() == '=') {
-                consume();
-                tokens.push_back({ .type = TokenType::EQUALS, .line = line, .col = col });
-                continue;
-            }
-            else if (std::isspace(peek().value())) {
+
+            // new line
+            if (std::isspace(value)) {
                 if (peek().value() == '\n') tokens.push_back({.type = TokenType::NEW_LINE, .line = line, .col = col });
                 consume();
                 continue;
