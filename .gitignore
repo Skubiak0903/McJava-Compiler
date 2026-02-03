@@ -1,9 +1,3 @@
-# .gitignore file created for free with Tower (https://www.git-tower.com/)
-# For suggestions or improvements please contact us using support@git-tower.com
-# Generated on 2026-01-29
-# Includes: cpp
-
-
 ### Universal ###
 # Common files that should be ignored in all projects
 
@@ -14,6 +8,7 @@
 *.tmp
 *~
 *.bak
+*.dump
 
 # Environment files (containing secrets, API keys, credentials)
 .env

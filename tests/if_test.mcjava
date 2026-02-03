@@ -1,0 +1,11 @@
+x = 5;
+
+x = x + 5;
+
+if (x > 5) {
+    say "X is greater than 5"
+} else if (x == 5) {
+    say "X is equal to 5"
+} else {
+    say "X is less than 5"
+}

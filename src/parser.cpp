@@ -40,7 +40,7 @@ private:
     SimplifiedCommandRegistry& reg_;
     size_t pos_;
 
-    std::unordered_map<std::string, DataType> varTypes_;
+    //std::unordered_map<std::string, DataType> varTypes_;
 
 
 
@@ -110,14 +110,10 @@ private:
         Token name = consume(); // consume IDENT
         consume(); // consume '='
 
+        if (!name.value.has_value()) error("Encountered variable assignation with unknown name", name);
         auto value = parseExpression();
 
-        // save variable
-        if (!name.value.has_value()) error("Encountered variable assignation with unknown name", name);
-        std::string varName = name.value.value();
-        varTypes_[varName] = value->dataType;
-
-        return std::make_unique<VarDeclNode>(name, value->dataType, std::move(value));
+        return std::make_unique<VarDeclNode>(name, std::move(value));
     }
 
 
@@ -128,7 +124,8 @@ private:
         // Zbierz wszystkie argumenty do końca linii
         while (hasTokens() && 
                peek().type != TokenType::NEW_LINE &&
-               peek().type != TokenType::END_OF_FILE) {
+               peek().type != TokenType::END_OF_FILE &&
+               peek().type != TokenType::SEMI_COLON) {
             
             node->args.push_back(parseExpression());
         }
@@ -200,9 +197,8 @@ private:
         while (hasTokens() && peek().type != TokenType::CLOSE_BRACE) {
             if (auto stmt = parseStatement()) {
                 scope->statements.push_back(std::move(stmt));
-            }/* else {
-                error("Failed to parse statement");
-            }*/
+            }
+
            skipNewLines(); // needed -> witchout this there could be Tokens (NEW_LINE, CLOSE_BRACE) and becouse parseStatement skips new Lines it would fail becouse it doesnt know '}'
         }
 
@@ -229,9 +225,10 @@ private:
         while (hasTokens() && isComparisonOperator(peek().type)) {
             Token op = consume(); // consume operator
             auto right = parseAdditive();
-            DataType type = inferBinaryOpType(op.type, left->dataType, right->dataType);
+            // Move to analyzer
+            //DataType type = inferBinaryOpType(op.type, left->dataType, right->dataType);
 
-            left = std::make_unique<BinaryOpNode>(op, type, std::move(left), std::move(right));
+            left = std::make_unique<BinaryOpNode>(op, std::move(left), std::move(right));
         }
         
         return left;
@@ -246,9 +243,10 @@ private:
             
             Token op = consume();
             auto right = parseMultiplicative();
-            DataType type = inferBinaryOpType(op.type, left->dataType, right->dataType);
+            // Move to analyzer
+            //DataType type = inferBinaryOpType(op.type, left->dataType, right->dataType);
 
-            left = std::make_unique<BinaryOpNode>(op, type, std::move(left), std::move(right));
+            left = std::make_unique<BinaryOpNode>(op, std::move(left), std::move(right));
         }
         
         return left;
@@ -263,9 +261,10 @@ private:
             
             Token op = consume();
             auto right = parsePrimary();
-            DataType type = inferBinaryOpType(op.type, left->dataType, right->dataType);
+            // Move to analyzer
+            //DataType type = inferBinaryOpType(op.type, left->dataType, right->dataType);
 
-            left = std::make_unique<BinaryOpNode>(op, type, std::move(left), std::move(right));
+            left = std::make_unique<BinaryOpNode>(op, std::move(left), std::move(right));
         }
         
         return left;
@@ -276,6 +275,8 @@ private:
         if (!hasTokens()) error(false, 0, 0, "Expected expression");
         
         Token tok = consume();
+
+        // TODO: change if to switch case
         
         // Literały, identyfikatory, komendy
         if (tok.type == TokenType::INT_LIT ||
@@ -286,7 +287,8 @@ private:
             tok.type == TokenType::FALSE ||
             tok.type == TokenType::IDENT) {
 
-            if (tok.type == TokenType::IDENT) {
+            /*if (tok.type == TokenType::IDENT) {
+                // Move to analyzer
                 // check if variable exists
                 std::string varName = tok.value.value();
                 if (varTypes_.find(varName) == varTypes_.end()) error("Tried to use unassigned variable (" + varName + ") in expression!", tok);
@@ -299,10 +301,10 @@ private:
             if (tok.type == TokenType::INT_LIT) return std::make_unique<ExprNode>(tok, DataType::INT);
             if (tok.type == TokenType::FLOAT_LIT) return std::make_unique<ExprNode>(tok, DataType::FLOAT);
             if (tok.type == TokenType::STRING_LIT) return std::make_unique<ExprNode>(tok, DataType::STRING);
-            if (tok.type == TokenType::TRUE || tok.type == TokenType::FALSE) return std::make_unique<ExprNode>(tok, DataType::BOOL);
+            if (tok.type == TokenType::TRUE || tok.type == TokenType::FALSE) return std::make_unique<ExprNode>(tok, DataType::BOOL);*/
 
-            error ("Unreachable");
-            return std::make_unique<ExprNode>(tok, DataType::UNKNOWN);
+            //error ("Unreachable");
+            return std::make_unique<ExprNode>(tok);
         }
 
         // Nawiasy
@@ -319,51 +321,21 @@ private:
         if (tok.type == TokenType::MINUS) {
             auto right = parsePrimary();
 
-            if (right->dataType != DataType::INT && right->dataType != DataType::FLOAT) {
+            /*if (right->dataType != DataType::INT && right->dataType != DataType::FLOAT) {
                 error("Unary minus can only be applied to numbers", tok);
-            }
+            }*/
 
             // zamień na to (0 - x)
             return std::make_unique<BinaryOpNode>(
                 Token{TokenType::MINUS, "-", tok.line, tok.col}, 
-                right->dataType,
-                std::make_unique<ExprNode>(Token{TokenType::INT_LIT, "0", tok.line, tok.col}, DataType::INT),
+                //right->dataType,
+                std::make_unique<ExprNode>(Token{TokenType::INT_LIT, "0", tok.line, tok.col}),
                 std::move(right)
             );
         }
 
         error(true, tok.line, tok.col, "Invalid expression");
         return nullptr;
-    }
-
-    // DataType helper
-    DataType inferBinaryOpType(TokenType op, DataType leftType, DataType rightType) {
-        // Dla operatorów arytmetycznych
-        if (op == TokenType::PLUS || op == TokenType::MINUS ||
-            op == TokenType::MULTIPLY || op == TokenType::DIVIDE) {
-            
-            // Reguły promocji typów
-            if (leftType == DataType::FLOAT || rightType == DataType::FLOAT) {
-                return DataType::FLOAT;  // float + int → float
-            }
-            if (leftType == DataType::INT && rightType == DataType::INT) {
-                return DataType::INT;    // int + int → int
-            }
-            if (leftType == DataType::STRING && op == TokenType::PLUS) {
-                return DataType::STRING; // string + string → string
-            }
-            return DataType::UNKNOWN;
-        }
-        
-        // Dla operatorów porównania
-        if (op == TokenType::EQUALS_EQUALS || op == TokenType::NOT_EQUALS ||
-            op == TokenType::LESS || op == TokenType::GREATER ||
-            op == TokenType::LESS_EQUAL || op == TokenType::GREATER_EQUAL) {
-            
-            return DataType::BOOL;  // zawsze bool
-        }
-        
-        return DataType::UNKNOWN;
     }
 
     

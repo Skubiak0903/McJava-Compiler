@@ -5,11 +5,13 @@
 #include <fstream>
 #include <unordered_map>
 #include <filesystem>
+#include <chrono>
 
 #include "./tokenization.hpp"
 #include "./debug_generator.cpp"
 #include "./generator.cpp"
 #include "./parser.cpp"
+#include "./analyzer.cpp"
 
 #include "./registries/SimplifiedCommandRegistry.hpp"
 
@@ -27,6 +29,8 @@ int main(int argc, char* argv[])
     bool dumpTokens = false;
     bool dumpCmds = false;
     bool dumpParseTree = false;
+    bool onlyAnalysis = false;
+    bool silent = false;
 
     std::string mcdoc_path  = "./mcdoc/commands.json";
     std::string dp_prefix   = "mcjava";
@@ -61,6 +65,16 @@ int main(int argc, char* argv[])
         dumpParseTree = true;
     }
 
+    if (args.find("analysis") != args.end()) {
+        onlyAnalysis = true;
+    }
+
+    if (args.find("silent") != args.end()) {
+        silent = true;
+    }
+
+
+
     if (args.find("mcdoc-path") != args.end()) {
         mcdoc_path = args["mcdoc-path"];
     }
@@ -77,6 +91,7 @@ int main(int argc, char* argv[])
 
     // First time measurement
     clock_t tStart = clock();
+    auto realStart = std::chrono::steady_clock::now();
 
     std::string fullname = argv[1];
     std::string filename = fullname.substr(0, fullname.find_last_of("."));
@@ -140,14 +155,36 @@ int main(int argc, char* argv[])
         std::ofstream file(filename + "-parser-tree.dump", std::ios::out);
         if (file.is_open()) {
             DebugGenerator debugGen(file);
-            ast->generate(debugGen);
+            ast->visit(debugGen);
             file.close();
         }
-
     }
 
     // end of parsing time measurement
     clock_t tEndPar = clock();
+
+    Analyzer analyzer;
+    ast->visit(analyzer);
+    const auto variables = analyzer.getVariables();
+
+    clock_t tEndAnz = clock();
+
+    // if -analysis then dont generate functions
+    if (onlyAnalysis) {
+        auto realEnd = std::chrono::steady_clock::now();
+        
+        // Print and format gathered times
+        if (silent) return EXIT_SUCCESS;
+        printf("Time parsing mcdoc: %.2fs\n", (double)(tEndReg - tStart)/CLOCKS_PER_SEC);
+        printf("Time tokenizing: %.2fs\n", (double)(tEndTok - tEndReg)/CLOCKS_PER_SEC);
+        printf("Time parsing: %.2fs\n", (double)(tEndPar - tEndTok)/CLOCKS_PER_SEC);
+        printf("Time analyzing: %.2fs\n", (double)(tEndAnz - tEndPar)/CLOCKS_PER_SEC);
+        printf("Time taken: %.4fs\n", (double)(clock() - tStart)/CLOCKS_PER_SEC);
+        printf("Real time taken: %.4fs\n", std::chrono::duration<double>(realEnd - realStart).count());
+        return EXIT_SUCCESS;
+    }
+
+    
 
     // Generation
     {   
@@ -158,22 +195,23 @@ int main(int argc, char* argv[])
         }
 
         fs::path path(filename);
-        std::cout << "Path: " << path << "\n";
-        FunctionGenerator funcGen(path, dp_prefix, dp_path);
-        ast->generate(funcGen);
+        if (!silent) std::cout << "Path: " << path << "\n";
+        FunctionGenerator funcGen(path, dp_prefix, dp_path, variables);
+        ast->visit(funcGen);
     }
-
-    // // create folder
-    // 
     
     // end of generation time measurement
     clock_t tEndGen = clock();
+    auto realEnd = std::chrono::steady_clock::now();
 
-    // Print and format gathered times
+     // Print and format gathered times
+    if (silent) return EXIT_SUCCESS;
     printf("Time parsing mcdoc: %.2fs\n", (double)(tEndReg - tStart)/CLOCKS_PER_SEC);
     printf("Time tokenizing: %.2fs\n", (double)(tEndTok - tEndReg)/CLOCKS_PER_SEC);
     printf("Time parsing: %.2fs\n", (double)(tEndPar - tEndTok)/CLOCKS_PER_SEC);
+    printf("Time analyzing: %.2fs\n", (double)(tEndAnz - tEndPar)/CLOCKS_PER_SEC);
     printf("Time generating: %.2fs\n", (double)(tEndGen - tEndPar)/CLOCKS_PER_SEC);
-    printf("Time taken: %.2fs\n", (double)(clock() - tStart)/CLOCKS_PER_SEC);
+    printf("Time taken: %.4fs (CPU)\n", (double)(clock() - tStart)/CLOCKS_PER_SEC);
+    printf("Real time taken: %.4fs\n", std::chrono::duration<double>(realEnd - realStart).count());
     return EXIT_SUCCESS;
 }

@@ -2,46 +2,46 @@
 #pragma once
 
 #include <string>
-#include <optional>
+// #include <optional>
 #include <vector>
 #include <memory>
-#include <iostream>
-
-#include "tokenization.hpp"
-#include "visitor.hpp"
+// #include <iostream>
 #include <any>
 
-// ----------------------------------------------------
-// PROSTE AST Z DZIEDZICZENIEM (jak w Javie!)
-// ----------------------------------------------------
+#include "tokenization.hpp" // Just for Token struct
+#include "visitor.hpp"
 
 
 enum class DataType {
     INT, FLOAT, BOOL, STRING, UNKNOWN
 };
 
-// Podstawowa klasa AST (jak interface w Javie)
-class ASTNode {
-public:
-    virtual ~ASTNode() = default;
-
-    template<typename T>
-    T generate(ASTVisitor<T>& visitor) const {
-        return std::any_cast<T>(accept(visitor));
-    }
-
-    // Overload for void-result visitors so we don't attempt std::any_cast<void>.
-    void generate(ASTVisitor<void>& visitor) const {
-        accept(visitor);
-    }
-
-    DataType dataType = DataType::UNKNOWN;
-
-protected:
-    // Nodes implement this to perform dynamic dispatch; returns a type-erased result.
-    virtual std::any accept(ASTVisitorBase& visitor) const = 0;
+enum class VarStorageType {
+    STORAGE, SCOREBOARD
 };
 
+
+
+struct VarInfo {
+    std::string name;
+    // --- Semantic Data ---
+    DataType dataType;
+    int scopeLevel;      // Scope depth when the variable was initialized
+    bool isConstant;
+    std::string constValue;
+
+    // --- Minecraft Data (Backend) ---
+    /*VarStorageType storageType;
+    std::string storageIdent;  
+    std::string storagePath;*/
+    
+    // --- Additional Flags ---
+    bool isUsed;
+    bool isInitialized;
+};
+
+
+// =====  HELPER FUNCTIONS =====
 inline std::string dataTypeToString(DataType type) {
     switch (type)
     {
@@ -57,16 +57,34 @@ inline std::string dataTypeToString(DataType type) {
 }
 
 
+// ========== CLASSES ==========
+class ASTNode {
+public:
+    virtual ~ASTNode() = default;
 
-// ===== PODKLASY =====
+    template<typename T>
+    T visit(ASTVisitor<T>& visitor) const {
+        return std::any_cast<T>(accept(visitor));
+    }
+
+    // Overload for void-result visitors so we don't attempt std::any_cast<void>.
+    void visit(ASTVisitor<void>& visitor) const {
+        accept(visitor);
+    }
+
+    // --- Semantic Data (Adnotations) ---
+    mutable bool isAnalyzed = false;
+    //mutable DataType dataType = DataType::UNKNOWN;
+
+protected:
+    // Nodes implement this to perform dynamic dispatch; returns a type-erased result.
+    virtual std::any accept(ASTVisitorBase& visitor) const = 0;
+};
 
 
-/*
-    struct CommandData {
-        Token cmd;
-        std::vector<ASTNode> args;
-    };
-*/
+
+// ===== SUBCLASSES =====
+
 class CommandNode : public ASTNode {
 public:
     Token command;
@@ -81,22 +99,15 @@ public:
 };
 
 
-/*
-    struct VarDeclData {
-        Token name;
-        std::unique_ptr<ASTNode> value;
-        //DataType type;
-    };
-*/
 class VarDeclNode : public ASTNode {
 public:
     Token name;
     std::unique_ptr<ASTNode> value;
+
+    mutable std::shared_ptr<VarInfo> varInfo;
     
-    VarDeclNode(Token name, DataType type, std::unique_ptr<ASTNode> value)
-        : name(name), value(std::move(value)) {
-        this->dataType = type;
-    }
+    VarDeclNode(Token name, std::unique_ptr<ASTNode> value)
+        : name(name), value(std::move(value)) {}
     
     std::any accept(ASTVisitorBase& visitor) const override {
         return visitor.visitVarDecl(*this);
@@ -104,20 +115,15 @@ public:
 };
 
 
-/*
-    struct ExprData {
-        Token token;
-        //DataType type;
-    };
-*/
 class ExprNode : public ASTNode {
 public:
     Token token;
+
+    mutable std::shared_ptr<VarInfo> varInfo;
+
     
-    ExprNode(Token token, DataType type)
-        : token(token) {
-        this->dataType = type;
-    }
+    ExprNode(Token token)
+        : token(token) {}
     
     std::any accept(ASTVisitorBase& visitor) const override {
         return visitor.visitExpr(*this);
@@ -125,24 +131,16 @@ public:
 };
 
 
-/*
-    struct BinaryOpData {
-        Token op;
-        std::unique_ptr<ASTNode> left;
-        std::unique_ptr<ASTNode> right;
-        //DataType type;
-    };
-*/
 class BinaryOpNode : public ASTNode {
 public:
     Token op;
     std::unique_ptr<ASTNode> left;
     std::unique_ptr<ASTNode> right;
+
+    mutable std::shared_ptr<VarInfo> varInfo;
     
-    BinaryOpNode(Token op, DataType type, std::unique_ptr<ASTNode> left, std::unique_ptr<ASTNode> right)
-        : op(op), left(std::move(left)), right(std::move(right)) {
-            this->dataType = type;
-        }
+    BinaryOpNode(Token op, std::unique_ptr<ASTNode> left, std::unique_ptr<ASTNode> right)
+        : op(op), left(std::move(left)), right(std::move(right)) {}
     
     std::any accept(ASTVisitorBase& visitor) const override {
         return visitor.visitBinaryOp(*this);
@@ -150,13 +148,6 @@ public:
 };
 
 
-/*
-    struct IfStmtData {
-        std::unique_ptr<ASTNode> condition;
-        std::unique_ptr<ASTNode> thenBranch;  // zawsze musi być
-        std::unique_ptr<ASTNode> elseBranch;  // może być nullptr
-    };
-*/
 class IfNode : public ASTNode {
 public:
     std::unique_ptr<ASTNode> condition;
@@ -172,12 +163,6 @@ public:
 };
 
 
-/*
-    struct WhileLoopData {
-        std::unique_ptr<ASTNode> condition;
-        std::unique_ptr<ASTNode> body;
-    };
-*/
 class WhileNode : public ASTNode {
 public:
     std::unique_ptr<ASTNode> condition;
@@ -192,11 +177,6 @@ public:
 };
 
 
-/*
-    struct ScopeData {
-        std::vector<ASTNode> statements;
-    };  
-*/
 class ScopeNode : public ASTNode {
 public:
     std::vector<std::unique_ptr<ASTNode>> statements;

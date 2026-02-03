@@ -1,5 +1,6 @@
 CXX = g++
-CXXFLAGS = -std=c++20 -Wall -I./src -MMD -MP
+# -O3 => Faster program, -Og => faster debbugging
+CXXFLAGS = -std=c++20 -Wall -I./src -MMD -MP -pipe -O2
 TARGET = ./out/compiler
 
 SRC_DIR = src

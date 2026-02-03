@@ -23,7 +23,7 @@ public:
 
         indent_++;
         for (const auto& arg : node.args) {
-            arg->generate(*this);
+            arg->visit(*this);
         }
         indent_--;
 
@@ -32,10 +32,10 @@ public:
     
     void visitVarDeclT(const VarDeclNode& node) override {
         indent();
-        output_ << "VarDecl: " << node.name.value.value_or("[no name]") << ", Type: " << dataTypeToString(node.dataType) << "\n";
+        output_ << "VarDecl: " << node.name.value.value_or("[no name]") << ", Type: " << dataTypeToString(node.varInfo->dataType) << "\n";
 
         indent_++;
-        node.value->generate(*this);
+        node.value->visit(*this);
         indent_--; 
 
         output_ << "\n";
@@ -45,18 +45,18 @@ public:
         indent();
         output_ << "Expr: " << node.token.value.value_or("[no value]") 
             << " [" << tokenTypeToString(node.token.type) << "], "
-            << "Type: " << dataTypeToString(node.dataType) << "\n";
+            << "Type: " << dataTypeToString(node.varInfo->dataType) << "\n";
     }
 
     void visitBinaryOpT(const BinaryOpNode& node) override {
         indent();
         output_ << "BinaryOp: " << node.op.value.value_or("[no op]") 
             << " [" << tokenTypeToString(node.op.type) << "],"
-            << "Type: " << dataTypeToString(node.dataType) << "\n";
+            << "Type: " << dataTypeToString(node.varInfo->dataType) << "\n";
         
         indent_++;
-        node.left->generate(*this);
-        node.right->generate(*this);
+        node.left->visit(*this);
+        node.right->visit(*this);
         indent_--; 
     }
 
@@ -65,8 +65,8 @@ public:
         output_ << "IfStmt\n";
 
         indent_++;
-        node.condition->generate(*this);
-        node.thenBranch->generate(*this);
+        node.condition->visit(*this);
+        node.thenBranch->visit(*this);
         indent_--;
 
         if (node.elseBranch) {
@@ -74,7 +74,7 @@ public:
             output_ << "else:\n";
 
             indent_++;
-            node.elseBranch->generate(*this);
+            node.elseBranch->visit(*this);
             indent_--;
         }
 
@@ -86,8 +86,8 @@ public:
         output_ << "WhileLoop\n";
 
         indent_++;
-        node.condition->generate(*this);
-        node.body->generate(*this);
+        node.condition->visit(*this);
+        node.body->visit(*this);
         indent_--;
 
         output_ << "\n";
@@ -99,7 +99,7 @@ public:
         
         indent_++;
         for (const auto& stmt : node.statements) {
-            stmt->generate(*this);
+            stmt->visit(*this);
         }
         indent_--;
 
