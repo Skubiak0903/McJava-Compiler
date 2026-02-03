@@ -2,14 +2,14 @@
 
 #include "./ast.hpp"
 
-struct VisitReturn {
+/*struct VisitReturn {
     DataType dataType;
 
     bool isConstant;
     std::string constValue;
-};
+};*/
 
-class Analyzer : public ASTVisitor<std::shared_ptr<VisitReturn>> {
+class Analyzer : public ASTVisitor<std::shared_ptr<VarInfo>> {
 private:
     std::unordered_map<std::string, std::shared_ptr<VarInfo>> variables_;
 
@@ -17,35 +17,35 @@ public:
     Analyzer() {}
 
 
-    std::shared_ptr<VisitReturn> visitCommandT(const CommandNode& node) override {
+    std::shared_ptr<VarInfo> visitCommandT(const CommandNode& node) override {
         analyzeCommand(node);
         return nullptr;
     }
 
-    std::shared_ptr<VisitReturn> visitVarDeclT(const VarDeclNode& node) override {
+    std::shared_ptr<VarInfo> visitVarDeclT(const VarDeclNode& node) override {
         analyzeVarDecl(node);
         return nullptr;
     }
 
-    std::shared_ptr<VisitReturn> visitExprT(const ExprNode& node) override {
+    std::shared_ptr<VarInfo> visitExprT(const ExprNode& node) override {
         return analyzeExpr(node); 
     }
 
-    std::shared_ptr<VisitReturn> visitBinaryOpT(const BinaryOpNode& node) override {
+    std::shared_ptr<VarInfo> visitBinaryOpT(const BinaryOpNode& node) override {
         return analyzeBinaryOp(node);
     }
 
-    std::shared_ptr<VisitReturn> visitIfT(const IfNode& node) override {
+    std::shared_ptr<VarInfo> visitIfT(const IfNode& node) override {
         analyzeIf(node);
         return nullptr;
     }
 
-    std::shared_ptr<VisitReturn> visitWhileT(const WhileNode& node) override {
+    std::shared_ptr<VarInfo> visitWhileT(const WhileNode& node) override {
         analyzeWhile(node);
         return nullptr;
     }
 
-    std::shared_ptr<VisitReturn> visitScopeT(const ScopeNode& node) override {
+    std::shared_ptr<VarInfo> visitScopeT(const ScopeNode& node) override {
         analyzeScope(node);
         return nullptr;
     }
@@ -66,16 +66,16 @@ private:
 
     void analyzeVarDecl(const VarDeclNode& node) {
         // analyze value first
-        auto visitReturn = node.value->visit(*this);
+        auto resultVar = node.value->visit(*this);
         std::string varName = node.name.value.value();
         
         if (varName.empty()) {
             error("VarDecl Error: Variable name is empty!");
         }
 
-        if (!visitReturn) error("VarDecl Error: Should be UNREACHABLE");
+        if (!resultVar) error("VarDecl Error: Should be UNREACHABLE");
 
-        if (visitReturn->dataType == DataType::UNKNOWN) {
+        if (resultVar->dataType == DataType::UNKNOWN) {
             error("VarDecl Error: Could not infer type of variable " + varName);
         }
         
@@ -86,12 +86,12 @@ private:
         auto varInfo = std::make_shared<VarInfo>();
 
         varInfo->name = varName;
-        varInfo->dataType = visitReturn->dataType;
+        varInfo->dataType = resultVar->dataType;
         varInfo->isInitialized = true;
-        varInfo->isConstant = visitReturn->isConstant;
-        
-        if (visitReturn->isConstant) {
-            varInfo->constValue = visitReturn->constValue;
+        varInfo->isConstant = resultVar->isConstant;
+
+        if (resultVar->isConstant) {
+            varInfo->constValue = resultVar->constValue;
         }
         
         // save variable
@@ -103,7 +103,7 @@ private:
         node.isAnalyzed = true;
     }
 
-    std::shared_ptr<VisitReturn> analyzeExpr(const ExprNode& node) {
+    std::shared_ptr<VarInfo> analyzeExpr(const ExprNode& node) {
         std::string tokValue = node.token.value.value();
         std::shared_ptr<VarInfo> varInfo;
         
@@ -170,37 +170,31 @@ private:
             
         }
         
-        auto result = std::make_shared<VisitReturn>();
-        
-        result->dataType = dataType;
-        result->isConstant = isConstant;
-        result->constValue = constValue;
-        
         node.varInfo = varInfo;
         node.isAnalyzed = true;
-        return result;
+        return varInfo;
     }
 
-    std::shared_ptr<VisitReturn> analyzeBinaryOp(const BinaryOpNode& node){
+    std::shared_ptr<VarInfo> analyzeBinaryOp(const BinaryOpNode& node){
         // Implementation of binary operation analysis
-        auto left = node.left->visit(*this);
-        auto right = node.right->visit(*this);
+        auto leftVar = node.left->visit(*this);
+        auto rightVar = node.right->visit(*this);
 
-        if (!left || !right) {
+        if (!leftVar || !rightVar) {
             error("Failed to analyze binary operation");
             return nullptr;
         }
         
-        DataType dataType = inferBinaryOpType(node.op.type, left->dataType, right->dataType);
+        DataType dataType = inferBinaryOpType(node.op.type, leftVar->dataType, rightVar->dataType);
         bool isConstant = false;
         std::string constValue;
 
         if (dataType == DataType::UNKNOWN) {
-            error("Not Matching types in binary operation: " + dataTypeToString(left->dataType) + " and " + dataTypeToString(right->dataType));
+            error("Not Matching types in binary operation: " + dataTypeToString(leftVar->dataType) + " and " + dataTypeToString(rightVar->dataType));
             return nullptr;
         }
 
-        isConstant = left->isConstant && right->isConstant;
+        isConstant = leftVar->isConstant && rightVar->isConstant;
         if (isConstant) {
             //result->constValue = ;
             
@@ -212,20 +206,15 @@ private:
         }
 
         auto varInfo = std::make_shared<VarInfo>();
-        varInfo->name = "";
+        varInfo->name = "UNKNOWN-NAME[Internal error]";
         varInfo->dataType = dataType;
-        varInfo->isUsed = true;
+        varInfo->isUsed = false;
         varInfo->isConstant = isConstant;
         if (isConstant) varInfo->constValue = constValue;
-
-        auto result = std::make_shared<VisitReturn>();
-        result->dataType = dataType;
-        result->isConstant = isConstant;
-        if (isConstant) result->constValue = constValue;
         
         node.varInfo = varInfo;
         node.isAnalyzed = true;
-        return result;
+        return varInfo;
     }
 
     void analyzeIf(const IfNode& node) {
@@ -253,20 +242,24 @@ private:
 
     // DataType helper
     DataType inferBinaryOpType(TokenType op, DataType leftType, DataType rightType) {
-        // Dla operatorów arytmetycznych
+        // arithmetic operators
         if (op == TokenType::PLUS || op == TokenType::MINUS ||
             op == TokenType::MULTIPLY || op == TokenType::DIVIDE) {
             
-            // Reguły promocji typów
-            if (leftType == DataType::FLOAT || rightType == DataType::FLOAT) {
-                return DataType::FLOAT;  // float + int → float
-            }
-            if (leftType == DataType::INT && rightType == DataType::INT) {
-                return DataType::INT;    // int + int → int
-            }
-            if (leftType == DataType::STRING && op == TokenType::PLUS) {
-                return DataType::STRING; // string + string → string
-            }
+            /*
+             *  EVERYTHING that is commented is not implemented at the moment
+             */
+
+            // float + int -> float
+            //if (leftType == DataType::FLOAT && rightType == DataType::INT) return DataType::FLOAT;  
+            //if (leftType == DataType::INT && rightType == DataType::FLOAT) return DataType::FLOAT;  
+            
+            // same types
+            if (leftType == DataType::INT && rightType == DataType::INT) return DataType::INT;
+            //if (leftType == DataType::FLOAT && rightType == DataType::FLOAT) return DataType::FLOAT;
+            
+            // string + string → string
+            //if (leftType == DataType::STRING && op == TokenType::PLUS) return DataType::STRING;
             return DataType::UNKNOWN;
         }
         

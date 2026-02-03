@@ -11,29 +11,29 @@
 #include "./registries/SimplifiedCommandRegistry.hpp"
 
 enum class TokenType {
-    // Literały
+    // Literals
     INT_LIT, FLOAT_LIT, STRING_LIT,
     
-    // Operatory
+    // Operators
     PLUS, MINUS, MULTIPLY, DIVIDE,
     EQUALS, EQUALS_EQUALS, NOT_EQUALS,
     LESS, GREATER, LESS_EQUAL, GREATER_EQUAL,
     
-    // Nawiasy
+    // Brackets
     OPEN_PAREN, CLOSE_PAREN,
     OPEN_BRACE, CLOSE_BRACE,
     OPEN_BRACKET, CLOSE_BRACKET,
     
-    // Interpunkcja
+    // Interpunction
     SEMI_COLON, COMMA, DOT,
     
-    // Słowa kluczowe
+    // Keywords
     WHILE, FOR, IF, ELSE, RETURN, TRUE, FALSE,
     
-    // Dynamiczne
+    // Dynamic
     IDENT, CMD_KEY,
     
-    // Specjalne
+    // Special
     NEW_LINE, END_OF_FILE,
 };
 
@@ -80,12 +80,12 @@ const inline std::unordered_map<std::string, TokenType> DOUBLE_CHARS = {
 
 inline std::string tokenTypeToString(TokenType type) {
     switch(type) {
-        //litelals
+        // Literals
         case TokenType::INT_LIT : return "Int";
         case TokenType::FLOAT_LIT : return "Float"; 
         case TokenType::STRING_LIT : return "String";
         
-        // Operatory
+        // Operators
         case TokenType::PLUS : return "PLUS (+)";
         case TokenType::MINUS : return "MINUS (-)";
         case TokenType::MULTIPLY : return "MULTIPLY (*)";
@@ -98,7 +98,7 @@ inline std::string tokenTypeToString(TokenType type) {
         case TokenType::LESS_EQUAL : return "LESS OR EQUAL (<=)";
         case TokenType::GREATER_EQUAL : return "GREATER OR EQUAL (>=)";
 
-        // Nawiasy
+        // Brackets
         case TokenType::OPEN_PAREN : return "(";
         case TokenType::CLOSE_PAREN : return ")";
         case TokenType::OPEN_BRACE : return "{";
@@ -106,13 +106,13 @@ inline std::string tokenTypeToString(TokenType type) {
         case TokenType::OPEN_BRACKET : return "[";
         case TokenType::CLOSE_BRACKET : return "]";
         
-        // Interpunkcja
+        // Interpunction
         case TokenType::SEMI_COLON : return ";";
         case TokenType::COMMA : return ",";
         case TokenType::DOT : return ".";
 
         
-        // Słowa kluczowe
+        // Keywords
         case TokenType::WHILE : return "while";
         case TokenType::FOR : return "for";
         case TokenType::IF : return "if";
@@ -121,11 +121,11 @@ inline std::string tokenTypeToString(TokenType type) {
         case TokenType::TRUE : return "true";
         case TokenType::FALSE : return "false";
 
-        // dynamic tokens
+        // Dynamic
         case TokenType::IDENT : return "IDENTIFIER";
         case TokenType::CMD_KEY : return "COMMAND_KEY";
         
-        // special
+        // Special
         case TokenType::NEW_LINE: return "NEW_LINE";
         case TokenType::END_OF_FILE : return "END_OF_FILE";
         default: return "UNKNOWN";
@@ -184,27 +184,25 @@ public:
                     (value == '-' && (std::isdigit(peek(1).value_or('0')) || peek(1).value_or('\0') == '.')) ||
                     value == '.')
             {
-                std::string buf;       // pierwsza liczba
+                std::string buf;       // first number
                 bool isFloat = false;
 
-                // minus opcjonalny
+                // optional minus
                 if (value == '-') buf.push_back(consume());
 
-                // część całkowita
+                // integer part
                 while (peek().has_value() && std::isdigit(peek().value()))
                     buf.push_back(consume());
 
-                // sprawdzamy czy to float
+                // check if the value is float
                 if (peek().has_value() && peek().value() == '.') {
-                    // float
                     isFloat = true;
-                    buf.push_back(consume()); // kropka
+                    buf.push_back(consume()); // consume '.'
                     while (peek().has_value() && std::isdigit(peek().value())) {
                         buf.push_back(consume());
                     }
                 }
 
-                // tworzymy token
                 if (isFloat) {
                     tokens.push_back({ .type = TokenType::FLOAT_LIT,
                                     .value = buf,
@@ -220,7 +218,7 @@ public:
 
             // strings 
             if (value == '"' || value == '\'') {
-                char quote = consume(); // " lub '
+                char quote = consume(); // consume " or '
                 while (peek().has_value() && peek().value() != quote) {
                     char c = consume();
                     if (c == '\\') { // escape sequence
@@ -258,7 +256,7 @@ public:
 
             // comments
             if (value == '#' && col == 0) {
-                consume();
+                consume(); //  consume '#'
                 while (peek().has_value() && peek().value() != '\n') {
                     consume();
                 }
@@ -269,8 +267,8 @@ public:
                 char value2 = peek(1).value();
 
                 if (value == '/' && value2 == '/') {
-                    consume();
-                    consume();
+                    consume(); // consume '/'
+                    consume(); // consume '/'
                     while (peek().has_value() && peek().value() != '\n') {
                         consume();
                     }
@@ -278,15 +276,21 @@ public:
                 }
     
                 if (value == '/' && value2 == '*') {
-                    //std::cout << "Entered big comment section! at line " << line << ", column " << col << std::endl;
-                    consume();
-                    consume();
-                    while (!(peek().has_value() && peek().value() == '*' && peek(1).has_value() && peek(1).value() == '/')) {
+                    consume(); // consume '/'
+                    consume(); // consume '*'
+
+                    while (peek().has_value() && !(peek().value() == '*' && peek(1).has_value() && peek(1).value() == '/')) {
                         consume();
                     }
-                    consume();
-                    consume();
-                    //std::cout << "Exited big comment section! at line " << line << ", column " << col << std::endl;
+                    
+                    if (!peek().has_value()) {
+                        std::cerr << "Unterminated block comment at line " << line << ", column " << col << std::endl;
+                        exit(EXIT_FAILURE);
+                    }
+                    
+                    // we made sure that the next 2 chars are '*' and '/' -> while condition is defining it
+                    consume(); // consume '*'
+                    consume(); // consume '/'
                     continue;
                 }
     
@@ -297,8 +301,8 @@ public:
 
                 auto it = DOUBLE_CHARS.find(doubleChar);
                 if (it != DOUBLE_CHARS.end()) {
-                    consume();
-                    consume();
+                    consume(); // consume the first character of DOUBLE_CHAR
+                    consume(); // consume the secon character of DOUBLE_CHAR
                     
                     tokens.push_back({ .type = it->second, .value = doubleChar, .line = line, .col = col });
                     
@@ -343,7 +347,7 @@ private:
     }
 
     inline char consume() {
-        // first get at m_idx then increment m_idx by 1
+        // m_idx++ -> first get at m_idx then increment m_idx by 1
         char c = m_src.at(m_idx++);
         if (c == '\n') {  line++; col = 0; }
         else col++;

@@ -25,7 +25,7 @@ int main(int argc, char* argv[])
         return EXIT_FAILURE;
     }
 
-    // Get Arguments
+    // Arguments
     bool dumpTokens = false;
     bool dumpCmds = false;
     bool dumpParseTree = false;
@@ -47,7 +47,7 @@ int main(int argc, char* argv[])
                 args[key] = value;
                 //std::cout << "adding new " << key << " = " << value << " \n";
             } else {
-                args[arg.substr(1)] = "true"; // np. -debug
+                args[arg.substr(1)] = "true"; // ex. -debug
             }
         }
     }
@@ -204,7 +204,7 @@ int main(int argc, char* argv[])
     clock_t tEndGen = clock();
     auto realEnd = std::chrono::steady_clock::now();
 
-     // Print and format gathered times
+    // Print and format gathered times
     if (silent) return EXIT_SUCCESS;
     printf("Time parsing mcdoc: %.2fs\n", (double)(tEndReg - tStart)/CLOCKS_PER_SEC);
     printf("Time tokenizing: %.2fs\n", (double)(tEndTok - tEndReg)/CLOCKS_PER_SEC);

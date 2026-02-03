@@ -1,6 +1,5 @@
 #include <memory>
 #include <vector>
-#include <unordered_map>
 
 #include "./tokenization.hpp"
 #include "./registries/SimplifiedCommandRegistry.hpp"
@@ -24,7 +23,7 @@ class Parser {
             // End if thats the end
             if (peek().type == TokenType::END_OF_FILE) break;
             
-            // Parsuj statement i dodaj do listy
+            // Parse statement and add it to the global scope
             if (auto stmt = parseStatement()) {
                 scope->statements.push_back(std::move(stmt));
             } else {
@@ -40,12 +39,9 @@ private:
     SimplifiedCommandRegistry& reg_;
     size_t pos_;
 
-    //std::unordered_map<std::string, DataType> varTypes_;
-
-
-
-    // ===== HELPER METHODS =====    
     
+
+    // ===== HELPER METHODS =====   
 
     void skipNewLines() {
         while(hasTokens() && (canSkip(peek().type) || peek().type == TokenType::END_OF_FILE)) consume();
@@ -95,8 +91,7 @@ private:
             return parseWhile();
         }
         
-        
-        // 5. Blok { ... }
+        // 5. Scope { ... }
         if (tok.type == TokenType::OPEN_BRACE) {
             return parseScope();
         }
@@ -121,7 +116,7 @@ private:
         Token cmdKey = consume(); // consume CMD_KEY
         auto node = std::make_unique<CommandNode>(cmdKey);
 
-        // Zbierz wszystkie argumenty do końca linii
+        // Collect all arguments to the end of the line or semi colon
         while (hasTokens() && 
                peek().type != TokenType::NEW_LINE &&
                peek().type != TokenType::END_OF_FILE &&
@@ -199,7 +194,7 @@ private:
                 scope->statements.push_back(std::move(stmt));
             }
 
-           skipNewLines(); // needed -> witchout this there could be Tokens (NEW_LINE, CLOSE_BRACE) and becouse parseStatement skips new Lines it would fail becouse it doesnt know '}'
+           skipNewLines(); // needed -> without this there could be Tokens (NEW_LINE, CLOSE_BRACE) and because parseStatement skips newlines it would fail on '}'
         }
 
         expect(TokenType::CLOSE_BRACE, "at end of the scope", peek(-1).line, peek(-1).col);
@@ -216,17 +211,15 @@ private:
     // ===== EXPRESSION PARSE LOGIC =====
 
     std::unique_ptr<ASTNode> parseExpression() {
-        return parseComparison();  // Nowa funkcja która parsuje pełne wyrażenia
+        return parseComparison();
     }
 
     std::unique_ptr<ASTNode> parseComparison() {
         auto left = parseAdditive();
         
         while (hasTokens() && isComparisonOperator(peek().type)) {
-            Token op = consume(); // consume operator
+            Token op = consume();
             auto right = parseAdditive();
-            // Move to analyzer
-            //DataType type = inferBinaryOpType(op.type, left->dataType, right->dataType);
 
             left = std::make_unique<BinaryOpNode>(op, std::move(left), std::move(right));
         }
@@ -243,8 +236,6 @@ private:
             
             Token op = consume();
             auto right = parseMultiplicative();
-            // Move to analyzer
-            //DataType type = inferBinaryOpType(op.type, left->dataType, right->dataType);
 
             left = std::make_unique<BinaryOpNode>(op, std::move(left), std::move(right));
         }
@@ -261,8 +252,6 @@ private:
             
             Token op = consume();
             auto right = parsePrimary();
-            // Move to analyzer
-            //DataType type = inferBinaryOpType(op.type, left->dataType, right->dataType);
 
             left = std::make_unique<BinaryOpNode>(op, std::move(left), std::move(right));
         }
@@ -270,71 +259,52 @@ private:
         return left;
     }
 
-    // Parsuje wyrażenie (liczba, string, zmienna)
+    // Parses expressions (number, string, variable)
     std::unique_ptr<ASTNode> parsePrimary() {
         if (!hasTokens()) error(false, 0, 0, "Expected expression");
         
-        Token tok = consume();
+        Token tok = consume(); 
 
-        // TODO: change if to switch case
-        
-        // Literały, identyfikatory, komendy
-        if (tok.type == TokenType::INT_LIT ||
-            tok.type == TokenType::FLOAT_LIT ||
-            tok.type == TokenType::STRING_LIT ||
-            // tok.type == TokenType::CMD_KEY ||
-            tok.type == TokenType::TRUE ||
-            tok.type == TokenType::FALSE ||
-            tok.type == TokenType::IDENT) {
+        switch (tok.type) {
+            case TokenType::INT_LIT:
+            case TokenType::FLOAT_LIT:
+            case TokenType::STRING_LIT:
+            case TokenType::TRUE:
+            case TokenType::FALSE:
+            case TokenType::IDENT:
+                return std::make_unique<ExprNode>(tok);
 
-            /*if (tok.type == TokenType::IDENT) {
-                // Move to analyzer
-                // check if variable exists
-                std::string varName = tok.value.value();
-                if (varTypes_.find(varName) == varTypes_.end()) error("Tried to use unassigned variable (" + varName + ") in expression!", tok);
-
-                // retrive variable
-                DataType type = varTypes_[varName];
-                return std::make_unique<ExprNode>(tok, type);
+            // brackets
+            case TokenType::OPEN_PAREN: {
+                auto expr = parseExpression();
+                
+                expect(TokenType::CLOSE_PAREN, "in expression");
+                consume(); // consume ')'
+                
+                return expr;
             }
 
-            if (tok.type == TokenType::INT_LIT) return std::make_unique<ExprNode>(tok, DataType::INT);
-            if (tok.type == TokenType::FLOAT_LIT) return std::make_unique<ExprNode>(tok, DataType::FLOAT);
-            if (tok.type == TokenType::STRING_LIT) return std::make_unique<ExprNode>(tok, DataType::STRING);
-            if (tok.type == TokenType::TRUE || tok.type == TokenType::FALSE) return std::make_unique<ExprNode>(tok, DataType::BOOL);*/
+            // Unary minus (ex. -x )
+            case TokenType::MINUS: {
+                auto right = parsePrimary();
 
-            //error ("Unreachable");
-            return std::make_unique<ExprNode>(tok);
+                // expand it (-x) -> (0 - x)
+                return std::make_unique<BinaryOpNode>(
+                    Token{TokenType::MINUS, "-", tok.line, tok.col}, 
+                    std::make_unique<ExprNode>(Token{TokenType::INT_LIT, "0", tok.line, tok.col}),
+                    std::move(right)
+                );
+            }
+
+            default: {
+                error(true, tok.line, tok.col, "Invalid expression");
+                return nullptr;
+            }
         }
 
-        // Nawiasy
-        if (tok.type == TokenType::OPEN_PAREN) {
-            auto expr = parseExpression();
-            
-            expect(TokenType::CLOSE_PAREN, "in expression");
-            consume(); // consume ')'
-            
-            return expr;
-        }
 
-        // Unary minus (ex. -x )
-        if (tok.type == TokenType::MINUS) {
-            auto right = parsePrimary();
-
-            /*if (right->dataType != DataType::INT && right->dataType != DataType::FLOAT) {
-                error("Unary minus can only be applied to numbers", tok);
-            }*/
-
-            // zamień na to (0 - x)
-            return std::make_unique<BinaryOpNode>(
-                Token{TokenType::MINUS, "-", tok.line, tok.col}, 
-                //right->dataType,
-                std::make_unique<ExprNode>(Token{TokenType::INT_LIT, "0", tok.line, tok.col}),
-                std::move(right)
-            );
-        }
-
-        error(true, tok.line, tok.col, "Invalid expression");
+        // should be unreachable -> left in case
+        error(true, tok.line, tok.col, "INTERNAL ERROR: Reached unreachable code in parseExpression");        
         return nullptr;
     }
 
@@ -353,16 +323,16 @@ private:
 
     Token consume() {
         if (!hasTokens()) error(false, 0, 0, "Unexpected end of file");
-        // first get at pos_ then increment pos_ by 1
         return tokens_[pos_++];
     }
 
+    
     // ===== REPORT METHODS =====
 
     template<typename... Args>
     [[noreturn]] void error(bool has_value, size_t line, size_t col, Args&&... args) {
         std::ostringstream oss;
-        (oss << ... << args);  // fold expression w C++17
+        (oss << ... << args);
         if (has_value) {
             std::cerr << "Parser error: " << oss.str() << " at line " << line << ", column " << col << std::endl;
         } else {
