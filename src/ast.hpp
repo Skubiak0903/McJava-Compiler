@@ -2,10 +2,8 @@
 #pragma once
 
 #include <string>
-// #include <optional>
 #include <vector>
 #include <memory>
-// #include <iostream>
 #include <any>
 
 #include "tokenization.hpp" // Just for Token struct
@@ -26,14 +24,14 @@ struct VarInfo {
     std::string name;
     // --- Semantic Data ---
     DataType dataType;
-    int scopeLevel;      // Scope depth when the variable was initialized
+    //int scopeLevel;      // Scope depth when the variable was initialized
     bool isConstant;
     std::string constValue;
 
     // --- Minecraft Data (Backend) ---
-    /*VarStorageType storageType;
+    VarStorageType storageType;
     std::string storageIdent;  
-    std::string storagePath;*/
+    std::string storagePath;
     
     // --- Additional Flags ---
     bool isUsed;
@@ -103,7 +101,7 @@ class VarDeclNode : public ASTNode {
 public:
     Token name;
     std::unique_ptr<ASTNode> value;
-
+ 
     mutable std::shared_ptr<VarInfo> varInfo;
     
     VarDeclNode(Token name, std::unique_ptr<ASTNode> value)
@@ -118,9 +116,9 @@ public:
 class ExprNode : public ASTNode {
 public:
     Token token;
-
+    
+    mutable bool forceDynamic = false;
     mutable std::shared_ptr<VarInfo> varInfo;
-
     
     ExprNode(Token token)
         : token(token) {}

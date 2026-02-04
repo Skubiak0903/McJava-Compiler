@@ -1,0 +1,17 @@
+// Test: While boundaries
+x = 10;
+counter = 0;
+
+while (x < 5) {
+    counter = counter + 1;
+}
+
+say "Counter should be 0:"
+say counter
+
+y = 0;
+while (y < 3) {
+    y = y + 1;
+}
+say "Y should be 3:"
+say y

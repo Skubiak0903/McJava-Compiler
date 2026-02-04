@@ -1,0 +1,40 @@
+// INFO: 
+// its too long for default 65536 command limit
+// gamerule max_command_sequence_length 1000000
+// gamerule max_command_forks 1000000
+
+// Configuration
+iterations = 100000;
+i = 0;
+
+accumulator = 0;
+tempA = 7;
+tempB = 3;
+
+say "Starting Stress Test..."
+say "Iterations: "
+say iterations
+
+while (i < iterations) {
+
+    val = (tempA * i + tempB) / (tempA + 1);
+    
+    if (val > 50) {
+        accumulator = accumulator + 1;
+    } else {
+        accumulator = accumulator - 1;
+    }
+    
+    tempA = (tempA + 1) / 2 + 5;
+    if (tempA > 100) {
+        tempA = 7;
+    }
+
+    i = i + 1;
+}
+
+say "Test Finished!"
+say "Final Accumulator Value: "
+say accumulator
+say "Final I: "
+say i

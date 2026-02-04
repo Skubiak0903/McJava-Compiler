@@ -15,7 +15,7 @@ struct Scope {
 };
 
 // Should be changed into widely used VarInfo 
-struct SimpleVarInfo {
+/*struct SimpleVarInfo {
     //DataType dataType;
     //int scopeLevel;      // Scope depth when the variable was initialized
 
@@ -27,30 +27,19 @@ struct SimpleVarInfo {
     // --- Constant Data ----
     bool isConstant;
     std::string constValue;
-};
+};*/
 
 
 
-class FunctionGenerator : public ASTVisitor<std::shared_ptr<SimpleVarInfo>> {
+class FunctionGenerator : public ASTVisitor<std::shared_ptr<VarInfo>> {
 private:
     const fs::path& path_;
     const std::string dp_prefix;
     const std::string dp_path;
 
-    std::unordered_map<std::string, SimpleVarInfo> variables_;
+    std::unordered_map<std::string, std::shared_ptr<VarInfo>> variables_;
     std::vector<Scope> scopes_;
     size_t scopesTotalCount = 0;
-    size_t tempVarCount = 0;
-
-    std::string getCurrentScoreboard() {
-        // std::string scopeName = getCurrentScope().name;
-        std::string scopeName = "scope_0";
-        return "mcjava_sb_" + scopeName;
-    }
-
-    std::string getTempVarName() {
-        return "%" + std::to_string(tempVarCount++);
-    }
 
     Scope& getCurrentScope() {
         return scopes_.back();
@@ -95,42 +84,46 @@ private:
 
 public:
     FunctionGenerator(fs::path& path, std::string dp_prefix, std::string dp_path, std::unordered_map<std::string, std::shared_ptr<VarInfo>> variables) 
-        : path_(path), dp_prefix(dp_prefix), dp_path(dp_path)  {
+        : path_(path), dp_prefix(dp_prefix), dp_path(dp_path), variables_(std::move(variables))  {
 
+            /*// convert variables
             std::string currentSb = getCurrentScoreboard();
-            // convert variables
-            for (const auto& [name, varInfo] : variables) {
-                SimpleVarInfo simpleVar{
-                    .storageType = VarStorageType::SCOREBOARD,
-                    .storageIdent = currentSb,
-                    .storagePath = name,
-                    .isConstant = varInfo->isConstant,
-                    .constValue = varInfo->constValue
-                };
-                variables_.emplace(name, simpleVar);
-            }
+            for (const auto& [name, varInfo] : variables_) {
+                // Ustawiamy identyfikator tylko jeśli Analyzer go nie podał
+                if (varInfo->storageIdent.empty()) {
+                    varInfo->storageIdent = currentSb;
+                }
+                
+                // Ustawiamy ścieżkę tylko jeśli jest pusta
+                if (varInfo->storagePath.empty()) {
+                    varInfo->storagePath = varInfo->name;
+                }
+                
+                // Zmieniamy typ tylko jeśli nie został ustawiony (np. na CONSTANT)
+                varInfo->storageType = VarStorageType::SCOREBOARD;
+            }*/
         }
 
 
-    std::shared_ptr<SimpleVarInfo> visitCommandT(const CommandNode& node) override {
+    std::shared_ptr<VarInfo> visitCommandT(const CommandNode& node) override {
         generateCommand(node);
         return nullptr;
     }
 
-    std::shared_ptr<SimpleVarInfo> visitVarDeclT(const VarDeclNode& node) override {
+    std::shared_ptr<VarInfo> visitVarDeclT(const VarDeclNode& node) override {
         generateVarDecl(node);
         return nullptr;
     }
 
-    std::shared_ptr<SimpleVarInfo> visitExprT(const ExprNode& node) override {
+    std::shared_ptr<VarInfo> visitExprT(const ExprNode& node) override {
         return generateExpr(node); 
     }
 
-    std::shared_ptr<SimpleVarInfo> visitBinaryOpT(const BinaryOpNode& node) override {
+    std::shared_ptr<VarInfo> visitBinaryOpT(const BinaryOpNode& node) override {
         return generateBinaryOp(node);
     }
 
-    std::shared_ptr<SimpleVarInfo> visitIfT(const IfNode& node) override {
+    std::shared_ptr<VarInfo> visitIfT(const IfNode& node) override {
         if (node.elseBranch) {
             generateIfWithElse(node);
         } else {
@@ -139,12 +132,12 @@ public:
         return nullptr;
     }
 
-    std::shared_ptr<SimpleVarInfo> visitWhileT(const WhileNode& node) override {
+    std::shared_ptr<VarInfo> visitWhileT(const WhileNode& node) override {
         generateWhile(node);
         return nullptr;
     }
 
-    std::shared_ptr<SimpleVarInfo> visitScopeT(const ScopeNode& node) override {
+    std::shared_ptr<VarInfo> visitScopeT(const ScopeNode& node) override {
         generateScope(node);
         return nullptr;
     }
@@ -166,14 +159,14 @@ private:
             if (exprNode) {                
                 if (exprNode->token.type == TokenType::STRING_LIT) {
                     ss << "{\"text\":\"" << exprNode->token.value.value() << "\"},";
+                    continue;
                 } else if (exprNode->varInfo->isConstant) {
                     ss << "{\"text\":\"" << exprNode->varInfo->constValue << "\"},";
+                    continue;
                 }
-                
-                continue;
             }
 
-            SimpleVarInfo tempVar = *arg->visit(*this);
+            VarInfo tempVar = *arg->visit(*this);
             ss << "{\"score\":{\"name\":\"" << tempVar.storagePath << "\",\"objective\":\"" << tempVar.storageIdent << "\"}},";
         }
         ss << "]";
@@ -185,15 +178,12 @@ private:
             
             
     void generateVarDecl(const VarDeclNode& node) {
-        std::string varName = node.name.value.value();
-        std::string currentSb = getCurrentScoreboard();
-        auto output = getCurrentOutput();
 
         // dont emit unused variables
         if (!node.varInfo->isUsed) {
             return;
         }
-
+        
         // if its used but its constant then also dont emit it
         // example:
         //   x = 10
@@ -207,43 +197,48 @@ private:
         // 
         // NOTE: it doest work when expression folding is disabled
         /*if (node.varInfo->isConstant) { // we dont need to add node.varInfo->isUsed -> all unused were remove above
-            return;
+        return;
         }*/
-
+       
+        std::string varName = node.varInfo->name;
+        auto output = getCurrentOutput();
+       
         if (node.varInfo->isConstant) {
             *output << "#Debug: Constant var\n";
-            *output << "scoreboard players set " << varName << " " << currentSb << " " << node.varInfo->constValue << "\n";
+            *output << "scoreboard players set " << varName << " " << node.varInfo->storageIdent << " " << node.varInfo->constValue << "\n";
         } else {
-            SimpleVarInfo tempVar = *node.value->visit(*this);
+            VarInfo tempVar = *node.value->visit(*this);
 
             *output << "#Debug: Dynamic var \n";
-            *output << "scoreboard players operation " << varName << " " << currentSb << " = " << tempVar.storagePath << " " << tempVar.storageIdent << "\n";
+            *output << "scoreboard players operation " << varName << " " << node.varInfo->storageIdent << " = " << tempVar.storagePath << " " << tempVar.storageIdent << "\n";
         }
     }
 
 
 
     // LEFT UNREFACTORED FOR NOW -> NOT SURE IF THIS IS THE 100% CORRECT 
-    std::shared_ptr<SimpleVarInfo> generateExpr(const ExprNode& node) {
+    std::shared_ptr<VarInfo> generateExpr(const ExprNode& node) {
         // just assigns value to variable
-        std::string currentSb = getCurrentScoreboard();
         std::string tokValue = node.token.value.value(); // variable name in user code
-        std::string varName = "%" +  tokValue; // won't collide with any user defined variables
+        //std::string varName = "%" +  tokValue; // won't collide with any user defined variables
 
         //auto output = getCurrentOutput();
 
-        SimpleVarInfo varInfo = SimpleVarInfo{
-            .storageType = VarStorageType::SCOREBOARD,
-            .storageIdent = currentSb,
-            .storagePath = varName,
-            .isConstant = node.varInfo->isConstant,
-            .constValue = node.varInfo->constValue,
-        };
+        // VarInfo varInfo = VarInfo{
+        //     .storageType = VarStorageType::SCOREBOARD,
+        //     .storageIdent = currentSb,
+        //     .storagePath = varName,
+        //     .isConstant = node.varInfo->isConstant,
+        //     .constValue = node.varInfo->constValue,
+        // };
 
         // if constant -> dont generate, higher node should implement it properly
-        if(node.varInfo->isConstant) {
-            varInfo.storagePath = tokValue;
-            return std::make_shared<SimpleVarInfo>(varInfo);
+        if(node.varInfo->isConstant && !node.forceDynamic) {
+            
+            // we dont want to change anything in variables -> just generate it
+            //node.varInfo->storagePath = tokValue;
+            //node.varInfo->storageIdent = getCurrentScoreboard();
+            return node.varInfo;
         }
 
         // this block appears to be unreachable
@@ -253,8 +248,8 @@ private:
         } else */
 
         {
-            // retrive variable -> variable exists becouse analyzer checked it
-            SimpleVarInfo copyVar = variables_.at(node.token.value.value());
+            // retrive variable -> variable exists because analyzer checked it
+            auto varInfo = variables_.at(node.token.value.value());
 
             // can be wrong but we dont need to emits anything becouse we are only copying this value, and
             // the binary operation copy values that they change by themselves
@@ -263,10 +258,8 @@ private:
             //*output << "#Debug: Dynamic Expression\n";
             //*output << "scoreboard players operation " << varName << " " << currentSb << " = " << varInfo.storagePath << " " << varInfo.storageIdent << "\n";
 
-            return std::make_unique<SimpleVarInfo>(copyVar);
+            return varInfo;
         }
-
-        return std::make_unique<SimpleVarInfo>(varInfo);
     }
 
 
@@ -301,22 +294,21 @@ private:
       is the variable that we are setting to
     */
     
-    std::shared_ptr<SimpleVarInfo> generateBinaryOp(const BinaryOpNode& node) {
-        std::string currentSb = getCurrentScoreboard();
+    std::shared_ptr<VarInfo> generateBinaryOp(const BinaryOpNode& node) {
+        //auto currentSb = getCurrentScoreboard();
         auto output = getCurrentOutput();
-
+        
         // we can generate these 2 nodes because there is at least 1 variable -> analyzer combined all 2 constants binary operators
-        SimpleVarInfo leftVar  = *node.left  ->visit(*this);
-        SimpleVarInfo rightVar = *node.right ->visit(*this);
+        VarInfo leftVar  = *node.left ->visit(*this);
+        VarInfo rightVar = *node.right->visit(*this);
 
-        std::string tempVarName = getTempVarName();
+        // we dont want to change anything in variables -> just generate it
+        //std::string tempVarName = getTempVarName();
+        //node.varInfo->storagePath  = tempVarName;
+        //node.varInfo->storageIdent = currentSb;
 
-        SimpleVarInfo varInfo = {
-            .storageType  = VarStorageType::SCOREBOARD,
-            .storageIdent = currentSb,
-            .storagePath  = tempVarName,
-            .isConstant   = false // there is at least 1 variable in this binary operation
-        };
+        std::string tempVarName = node.varInfo->storagePath;
+        std::string tempVarSb   = node.varInfo->storageIdent;
 
         switch (node.op.type) 
         {
@@ -324,32 +316,48 @@ private:
             // THERE IS NO WAY TO OPTIMIZE THIS FURTHER DUE TO MINECRAFT COMMAND LIMITATIONS
             // 2 commands is the minimum for addition and there isn't any noticable gain in performace
 
-            // Optimalized: scoreboard players add
+            if (rightVar.isConstant && leftVar.isConstant) {
+                std::cout << "GEN WARNING: Encountered both sides of addition being constant, they should have been folded by the analyzer\n";
+                *output << "#Debug: Scoreboard ADD -> 2 constants\n";
+                *output << "scoreboard players set " << tempVarName << " " << tempVarSb << " " << leftVar.constValue << "\n";
+                *output << "scoreboard players add " << tempVarName << " " << tempVarSb << " " << rightVar.constValue << "\n";
+                break;
+            }
+
             if (rightVar.isConstant) {
                 *output << "#Debug: Scoreboard ADD -> rightVar is constant\n";
-                *output << "scoreboard players operation " << tempVarName << " " << currentSb << " = " << leftVar.storagePath << " " << leftVar.storageIdent << "\n";
-                *output << "scoreboard players add " << tempVarName << " " << currentSb << " " << rightVar.constValue << "\n";
+                *output << "scoreboard players operation " << tempVarName << " " << tempVarSb << " = " << leftVar.storagePath << " " << leftVar.storageIdent << "\n";
+                *output << "scoreboard players add " << tempVarName << " " << tempVarSb << " " << rightVar.constValue << "\n"; // addition is alternating
                 break;
             } else if (leftVar.isConstant) {
                 *output << "#Debug: Scoreboard ADD -> leftVar is constant\n";
-                *output << "scoreboard players operation " << tempVarName << " " << currentSb << " = " << rightVar.storagePath << " " << rightVar.storageIdent << "\n";
-                *output << "scoreboard players add " << tempVarName << " " << currentSb << " " << leftVar.constValue << "\n";
+                *output << "scoreboard players operation " << tempVarName << " " << tempVarSb << " = " << rightVar.storagePath << " " << rightVar.storageIdent << "\n";
+                *output << "scoreboard players add " << tempVarName << " " << tempVarSb << " " << leftVar.constValue << "\n"; // addition is alternating
                 break;
             }
             [[fallthrough]]; // fall to MULTIPLY / DIVIDE case
         }
         case TokenType::MINUS : {
 
+            if (rightVar.isConstant && leftVar.isConstant) {
+                std::cout << "GEN WARNING: Encountered both sides of subtraction being constant, they should have been folded by the analyzer\n";
+                *output << "#Debug: Scoreboard REMOVE -> 2 constants\n";
+                *output << "scoreboard players set " << tempVarName << " " << tempVarSb << " " << leftVar.constValue << "\n";
+                *output << "scoreboard players remove " << tempVarName << " " << tempVarSb << " " << rightVar.constValue << "\n";
+                break;
+            }
+
             // Optimalized: scoreboard players remove
             if (rightVar.isConstant) {
                 *output << "#Debug: Scoreboard REMOVE -> rightVar is constant\n";
-                *output << "scoreboard players operation " << tempVarName << " " << currentSb << " = " << leftVar.storagePath << " " << leftVar.storageIdent << "\n";
-                *output << "scoreboard players remove " << tempVarName << " " << currentSb << " " << rightVar.constValue << "\n";
+                *output << "scoreboard players operation " << tempVarName << " " << tempVarSb << " = " << leftVar.storagePath << " " << leftVar.storageIdent << "\n";
+                *output << "scoreboard players remove " << tempVarName << " " << tempVarSb << " " << rightVar.constValue << "\n";
                 break;
             } else if (leftVar.isConstant) {
                 *output << "#Debug: Scoreboard REMOVE -> leftVar is constant\n";
-                *output << "scoreboard players operation " << tempVarName << " " << currentSb << " = " << rightVar.storagePath << " " << rightVar.storageIdent << "\n";
-                *output << "scoreboard players remove " << tempVarName << " " << currentSb << " " << leftVar.constValue << "\n";
+                // subtraction isn't alternating
+                *output << "scoreboard players set " << tempVarName << " " << tempVarSb << " " << leftVar.constValue << "\n"; 
+                *output << "scoreboard players operation " << tempVarName << " " << tempVarSb << " -= " << rightVar.storagePath << " " << rightVar.storageIdent << "\n";
                 break;
             }
             [[fallthrough]]; // fall to MULTIPLY / DIVIDE case
@@ -360,8 +368,8 @@ private:
 
             // constants cannot help with performance in this case
             *output << "#DEBUG: BinaryOp -> Arithmetic operation\n";
-            *output << "scoreboard players operation " << tempVarName << " " << currentSb << " = " << leftVar.storagePath << " " << leftVar.storageIdent  << "\n";
-            *output << "scoreboard players operation " << tempVarName << " " << currentSb
+            *output << "scoreboard players operation " << tempVarName << " " << tempVarSb << " = " << leftVar.storagePath << " " << leftVar.storageIdent  << "\n";
+            *output << "scoreboard players operation " << tempVarName << " " << tempVarSb
                     << " " << comparator << " "       << rightVar.storagePath << " " << rightVar.storageIdent << "\n";
             
             break;
@@ -394,7 +402,7 @@ private:
                 else if (comparator == "<" || comparator == "<=") sValue = ".." + std::to_string(value); 
 
                 *output << "#DEBUG: BinaryOp -> Comparition operation -> RightVar is constant\n";
-                *output << "execute store success score " << tempVarName << " " << currentSb 
+                *output << "execute store success score " << tempVarName << " " << tempVarSb 
                     << " run execute if score " << leftVar.storagePath << " " << leftVar.storageIdent 
                     << " matches " << sValue << "\n";
                 
@@ -419,7 +427,7 @@ private:
                 else if (comparator == "<" || comparator == "<=") sValue = std::to_string(value) + ".."; 
 
                 *output << "#DEBUG: BinaryOp -> Comparison operation -> LeftVar is constant\n";
-                *output << "execute store success score " << tempVarName << " " << currentSb 
+                *output << "execute store success score " << tempVarName << " " << tempVarSb 
                     << " run execute if score " << rightVar.storagePath << " " << rightVar.storageIdent
                     << " matches " << sValue << "\n";
                 
@@ -427,7 +435,7 @@ private:
             }
 
             *output << "#DEBUG: BinaryOp -> Default Comparison operation\n";
-            *output << "execute store success score " << tempVarName << " " << currentSb 
+            *output << "execute store success score " << tempVarName << " " << tempVarSb 
                     << " run execute if score " << leftVar.storagePath << " " << leftVar.storageIdent 
                     << " " << comparator << " " << rightVar.storagePath << " " << rightVar.storageIdent << "\n";
 
@@ -439,7 +447,7 @@ private:
                 std::string value = rightVar.constValue;
 
                 *output << "#DEBUG: BinaryOp -> Equals Comparison operation -> RightVar is const\n";
-                *output << "execute store success score " << tempVarName << " " << currentSb 
+                *output << "execute store success score " << tempVarName << " " << tempVarSb 
                     << " run execute if score " << leftVar.storagePath << " " << leftVar.storageIdent 
                     << " matches " << value << "\n";
 
@@ -450,7 +458,7 @@ private:
                 std::string value = leftVar.constValue;
 
                 *output << "#DEBUG: BinaryOp -> Equals Comparison operation -> LeftVar is const\n";
-                *output << "execute store success score " << tempVarName << " " << currentSb 
+                *output << "execute store success score " << tempVarName << " " << tempVarSb 
                     << " run execute if score " << rightVar.storagePath << " " << rightVar.storageIdent 
                     << " matches " << value << "\n";
 
@@ -458,7 +466,7 @@ private:
             }
 
             *output << "#DEBUG: BinaryOp -> Default Equals Comparison operation\n";
-            *output << "execute store success score " << tempVarName << " " << currentSb 
+            *output << "execute store success score " << tempVarName << " " << tempVarSb 
                     << " run execute if score " << leftVar.storagePath << " " << leftVar.storageIdent 
                     << " = " << rightVar.storagePath << " " << rightVar.storageIdent << "\n";
             break;
@@ -469,7 +477,7 @@ private:
                 std::string value = rightVar.constValue;
 
                 *output << "#DEBUG: BinaryOp -> Not Equals Comparison operation -> RightVar is const\n";
-                *output << "execute store success score " << tempVarName << " " << currentSb 
+                *output << "execute store success score " << tempVarName << " " << tempVarSb 
                     << " run execute unless score " << leftVar.storagePath << " " << leftVar.storageIdent 
                     << " matches " << value << "\n";
 
@@ -480,7 +488,7 @@ private:
                 std::string value = leftVar.constValue;
 
                 *output << "#DEBUG: BinaryOp -> Not Equals Comparison operation -> LeftVar is const\n";
-                *output << "execute store success score " << tempVarName << " " << currentSb 
+                *output << "execute store success score " << tempVarName << " " << tempVarSb 
                     << " run execute unless score " << rightVar.storagePath << " " << rightVar.storageIdent 
                     << " matches " << value << "\n";
 
@@ -488,7 +496,7 @@ private:
             }
 
             *output << "#DEBUG: BinaryOp -> Default Not Equals Comparison operation\n";
-            *output << "execute store success score " << tempVarName << " " << currentSb 
+            *output << "execute store success score " << tempVarName << " " << tempVarSb 
                     << " run execute unless score " << leftVar.storagePath << " " << leftVar.storageIdent
                     << " = " << rightVar.storagePath << " " << rightVar.storageIdent << "\n";
             break;
@@ -498,7 +506,7 @@ private:
             error("Unknown Token Type in binary operator");
         }
 
-        return std::make_unique<SimpleVarInfo>(varInfo);
+        return node.varInfo;
     }
 
 
@@ -511,7 +519,7 @@ private:
         enterScope();
         auto thenOutput = getCurrentOutput();
         std::string thenScopeName = getCurrentScope().name;
-        SimpleVarInfo conditionVar = *node.condition->visit(*this);      
+        VarInfo conditionVar = *node.condition->visit(*this);      
 
         // then branch
         *thenOutput << "# Then Body\n";
@@ -584,7 +592,7 @@ private:
         auto mainOutput = getCurrentOutput();
         // first check to enter the loop
         *mainOutput << "# Check condition to enter the 'then' function\n";
-        SimpleVarInfo conditionVar = *node.condition->visit(*this);        
+        VarInfo conditionVar = *node.condition->visit(*this);        
         *mainOutput << "execute if score " << conditionVar.storagePath << " " << conditionVar.storageIdent << " matches 1 run function " << dp_prefix << ":" << dp_path << thenScopeName << "\n";
     }
 
@@ -610,7 +618,7 @@ private:
 
         // recheck condition at the end of the loop
         *whileOutput << "# Recheck condition at the end of the loop\n";
-        SimpleVarInfo recheckVar = *node.condition->visit(*this);  
+        VarInfo recheckVar = *node.condition->visit(*this);  
         *whileOutput << "execute if score " << recheckVar.storagePath << " " << recheckVar.storageIdent << " matches 1 run function " << dp_prefix << ":" << dp_path << scopeName << "\n";
 
         exitScope();
@@ -618,7 +626,7 @@ private:
         auto mainOutput = getCurrentOutput();
         // first check to enter the loop
         *mainOutput << "# Check condition to enter the loop\n";
-        SimpleVarInfo conditionVar = *node.condition->visit(*this);        
+        VarInfo conditionVar = *node.condition->visit(*this);        
         *mainOutput << "execute if score " << conditionVar.storagePath << " " << conditionVar.storageIdent << " matches 1 run function " << dp_prefix << ":" << dp_path << scopeName << "\n";
     }
 
@@ -640,7 +648,7 @@ private:
         // Collect all unique scoreboard idents
         std::set<std::string> uniqueIdents;
         for (const auto& [name, var]: variables_) {
-            uniqueIdents.insert(var.storageIdent);
+            uniqueIdents.insert(var->storageIdent);
         }
         
         std::ostringstream result;

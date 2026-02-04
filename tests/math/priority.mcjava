@@ -1,0 +1,14 @@
+// Test: Math Priorities
+a = 10;
+b = 2;
+c = 5;
+
+res1 = a + b * c;     // Should be 20
+res2 = (a + b) * c;   // Should be 60
+res3 = a / b - c;     // Should be 0
+res4 = 100 - 50 - 20; // Should be 30
+
+say res1
+say res2
+say res3
+say res4

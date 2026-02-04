@@ -1,0 +1,14 @@
+// Test: If-Else-If Ladder
+score = 75;
+
+if (score >= 90) {
+    say "A"
+} else if (score >= 70) {
+    say "B"
+} else if (score >= 50) {
+    say "C"
+} else {
+    say "F"
+}
+
+say "Correct Answer is: B"

@@ -1,0 +1,14 @@
+// Test: Variable Shadowing/Overwriting
+val = 1;
+val = val + 1;
+val = val + val;
+val = val * val;
+
+say "Val should be 16:"
+say val
+
+a = 10;
+b = a;
+a = 20;
+say "B should still be 10:"
+say b

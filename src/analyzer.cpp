@@ -2,16 +2,21 @@
 
 #include "./ast.hpp"
 
-/*struct VisitReturn {
-    DataType dataType;
-
-    bool isConstant;
-    std::string constValue;
-};*/
-
 class Analyzer : public ASTVisitor<std::shared_ptr<VarInfo>> {
 private:
     std::unordered_map<std::string, std::shared_ptr<VarInfo>> variables_;
+    size_t tempVarCount = 0;
+
+
+    std::string getCurrentScoreboard() const {
+        // std::string scopeName = getCurrentScope().name;
+        std::string scopeName = "scope_0";
+        return "mcjava_sb_" + scopeName;
+    }
+
+    std::string getTempVarName() {
+        return "%" + std::to_string(tempVarCount++);
+    }
 
 public:
     Analyzer() {}
@@ -83,20 +88,24 @@ private:
         //if (variables_.count(varName) > 0) {
         //}
 
-        auto varInfo = std::make_shared<VarInfo>();
-
-        varInfo->name = varName;
-        varInfo->dataType = resultVar->dataType;
-        varInfo->isInitialized = true;
-        varInfo->isConstant = resultVar->isConstant;
-
-        if (resultVar->isConstant) {
-            varInfo->constValue = resultVar->constValue;
-        }
+        // set all data to be sure everything is correct
+        VarInfo varData = { 
+            .name           = varName,
+            .dataType       = resultVar->dataType,
+            
+            .isConstant     = resultVar->isConstant,
+            .constValue     = resultVar->constValue, // we can just set without checking if isConstant is true
+            
+            .storageType    = VarStorageType::SCOREBOARD, // for now we only support int so it will be fine with scoreboard
+            .storageIdent   = getCurrentScoreboard(),
+            .storagePath    = varName,
+            
+            .isUsed         = false, // if we redeclare the variable but it isnt used in expression then this will stay false
+            .isInitialized  = true,
+        };
         
-        // save variable
-        //varInfo.scopeLevel = 
         
+        auto varInfo = std::make_shared<VarInfo>(varData);
         variables_[varName] = varInfo;
 
         node.varInfo = varInfo;
@@ -105,70 +114,80 @@ private:
 
     std::shared_ptr<VarInfo> analyzeExpr(const ExprNode& node) {
         std::string tokValue = node.token.value.value();
-        std::shared_ptr<VarInfo> varInfo;
+
+        // if ident then handle  it specially before creating VarInfo struct (that varData below)
+        if (node.token.type == TokenType::IDENT) {
+            // if ident then tokValue = varName
+
+            // check if variable exists
+            if (variables_.count(tokValue) <= 0) {
+                error("Tried to use unassigned variable " + tokValue);
+            }
+
+            auto varInfo = variables_[tokValue]; // get original pointer
+            varInfo->isUsed = true;
+
+            // use force dynamic only for variable use
+            //if (node.forceDynamic) varInfo-> isConstant = true; // FIXME: for some reason if its flipped it generates right
         
-        DataType dataType = DataType::UNKNOWN;
-        bool isConstant = false;
-        std::string constValue;
+            node.varInfo = varInfo;
+            node.isAnalyzed = true;
+            return varInfo;
+        } 
+
+        // set all data to be sure everything is correct
+        VarInfo varData = {
+            .name          = "%const_" + tokValue, // its set but it should disappear in another steps of analyzing
+            .dataType      = DataType::UNKNOWN,
+
+            .isConstant    = false,
+            .constValue    = "",
+            
+            .storageType   = VarStorageType::SCOREBOARD, // for now we only support int so it will be fine with scoreboard
+            .storageIdent  = getCurrentScoreboard(),
+            .storagePath   = "%const_" + tokValue, // its set but it should disappear in another steps of analyzing
+
+            .isUsed        = false,
+            .isInitialized = true,
+        };
         
         switch (node.token.type)
         {
-            case TokenType::IDENT : {
-                // if ident then tokValue = varName
-                // check if variable exists
-                if (variables_.count(tokValue) <= 0) {
-                    error("Tried to use unassigned variable " + tokValue);
-                }
-                varInfo = variables_[tokValue];
-                varInfo->isUsed = true;
-                
-                dataType = varInfo->dataType;
-                isConstant = varInfo->isConstant;
-                if (varInfo->isConstant) constValue = varInfo->constValue;
-                break;
-            }
             case TokenType::INT_LIT :
-                dataType = DataType::INT;
-                isConstant = true;
-                constValue = tokValue;
+                varData.dataType   = DataType::INT;
+                varData.isConstant = true;
+                varData.constValue = tokValue;
                 break;
             
             case TokenType::FLOAT_LIT : 
-                dataType = DataType::FLOAT;
-                isConstant = true;
-                constValue = tokValue;
+                varData.dataType   = DataType::FLOAT;
+                varData.isConstant = true;
+                varData.constValue = tokValue;
                 break;
             
             case TokenType::STRING_LIT :
-                dataType = DataType::STRING;
-                isConstant = true;
-                constValue = tokValue;
+                varData.dataType   = DataType::STRING;
+                varData.isConstant = true;
+                varData.constValue = tokValue;
                 break;
             
             case TokenType::FALSE :
-                dataType = DataType::BOOL;
-                isConstant = true;
-                constValue = "0";
+                varData.dataType   = DataType::BOOL;
+                varData.isConstant = true;
+                varData.constValue = "0";
                 break;
 
             case TokenType::TRUE :
-                dataType = DataType::BOOL;
-                isConstant = true;
-                constValue = "1";
+                varData.dataType   = DataType::BOOL;
+                varData.isConstant = true;
+                varData.constValue = "1";
                 break;
             
             default:
             error("Got Expression node with unknown token type: " + tokenTypeToString(node.token.type));
         }
-        
-        if (!varInfo) {
-            varInfo = std::make_shared<VarInfo>();
-            
-            varInfo->dataType = dataType;
-            varInfo->isConstant = isConstant;
-            varInfo->constValue = constValue;
-            
-        }
+
+        auto varInfo = std::make_shared<VarInfo>(varData);
         
         node.varInfo = varInfo;
         node.isAnalyzed = true;
@@ -184,17 +203,19 @@ private:
             error("Failed to analyze binary operation");
             return nullptr;
         }
-        
+
         DataType dataType = inferBinaryOpType(node.op.type, leftVar->dataType, rightVar->dataType);
-        bool isConstant = false;
-        std::string constValue;
+
 
         if (dataType == DataType::UNKNOWN) {
             error("Not Matching types in binary operation: " + dataTypeToString(leftVar->dataType) + " and " + dataTypeToString(rightVar->dataType));
             return nullptr;
         }
 
-        isConstant = leftVar->isConstant && rightVar->isConstant;
+        bool isConstant = leftVar->isConstant && rightVar->isConstant;
+        std::string constValue = "";
+
+        std::string storagePath;  // if its constatn then it should disappear in another steps of analyzing
         if (isConstant) {
             //result->constValue = ;
             
@@ -203,14 +224,32 @@ private:
             // for now pretend its not constant
             isConstant = false;
             constValue = "";
+
+            // disabled becouse constants folding is  not yet implemented and we treat constant binary operations as dynamic ones
+            //storagePath = "%binaryOP"; // temp name that should not make it into generation
+            storagePath = getTempVarName();
+        } else {
+            storagePath = getTempVarName();
         }
 
-        auto varInfo = std::make_shared<VarInfo>();
-        varInfo->name = "UNKNOWN-NAME[Internal error]";
-        varInfo->dataType = dataType;
-        varInfo->isUsed = false;
-        varInfo->isConstant = isConstant;
-        if (isConstant) varInfo->constValue = constValue;
+
+        // set all data to be sure everything is correct
+        VarInfo varData = { 
+            .name           = storagePath, 
+            .dataType       = dataType,
+            
+            .isConstant     = isConstant,
+            .constValue     = constValue,
+            
+            .storageType    = VarStorageType::SCOREBOARD, // for now we only support int so it will be fine with scoreboard
+            .storageIdent   = getCurrentScoreboard(),
+            .storagePath    = storagePath,
+            
+            .isUsed         = false,
+            .isInitialized  = true,
+        };
+
+        auto varInfo = std::make_shared<VarInfo>(varData);
         
         node.varInfo = varInfo;
         node.isAnalyzed = true;
@@ -226,9 +265,13 @@ private:
     }
 
     void analyzeWhile(const WhileNode& node) {
+        invalidateVarsInNode(node.body.get());
+        
+        // we need to first invalidate variables that were changed in the loop body
+        // and then we can analyze condition and body with correct information about which variables are constant
         node.condition->visit(*this);
         node.body->visit(*this);
-
+        
         node.isAnalyzed = true;
     }
 
@@ -272,6 +315,31 @@ private:
         }
         
         return DataType::UNKNOWN;
+    }
+
+    void invalidateVarsInNode(ASTNode* node) {
+        if (!node) return;
+
+        // If declaration (int y = ...), mark as non-constant
+        else if (auto decl = dynamic_cast<VarDeclNode*>(node)) {
+            //std::cout << "Analyzer: Invalidate variable " << decl->name.value.value() << " as non-constant due to being in while loop body\n";
+            //std::cout << "Analyzer: Variable " << decl->name.value.value() << " is now non-constant\n";
+            invalidateVarsInNode(decl->value.get());
+        }
+        if (auto expr = dynamic_cast<ExprNode*>(node)) {
+            // its double check is the TokenType is IDENT, another check is in analyzeExpr
+            if (expr->token.type == TokenType::IDENT) {
+                expr->forceDynamic = true;
+            }
+        }
+        else if (auto bin = dynamic_cast<BinaryOpNode*>(node)) {
+            invalidateVarsInNode(bin->left.get());
+            invalidateVarsInNode(bin->right.get());
+        }
+        // If it is scope, do recursive invalidation for all statements
+        else if (auto scope = dynamic_cast<ScopeNode*>(node)) {
+            for (auto& stmt : scope->statements) invalidateVarsInNode(stmt.get());
+        }
     }
 
 private:

@@ -1,8 +1,5 @@
 // debug_generator.cpp
-
 #include "./ast.hpp"
-
-// VarInfo is unused here
 
 class DebugGenerator : public ASTVisitor<void> {
 private:
@@ -32,7 +29,16 @@ public:
     
     void visitVarDeclT(const VarDeclNode& node) override {
         indent();
-        output_ << "VarDecl: " << node.name.value.value_or("[no name]") << ", Type: " << dataTypeToString(node.varInfo->dataType) << "\n";
+        
+        if (node.isAnalyzed) {
+            std::string name = node.varInfo->name;
+            std::string type = ", Type: " + dataTypeToString(node.varInfo->dataType);
+            std::string used = node.varInfo->isUsed ? ", [USED]" : ", [UNUSED]";
+            std::string isConst = node.varInfo->isConstant ? ", [CONST: " + node.varInfo->constValue + "]" : ", [NON-CONST]";
+            output_ << "VarDecl: " << name << type << used << isConst << "\n";
+        } else {
+            output_ << "VarDecl: " << node.name.value.value_or("[no name]") << "\n";
+        }
 
         indent_++;
         node.value->visit(*this);
@@ -43,17 +49,34 @@ public:
 
     void visitExprT(const ExprNode& node) override {
         indent();
-        output_ << "Expr: " << node.token.value.value_or("[no value]") 
-            << " [" << tokenTypeToString(node.token.type) << "], "
-            << "Type: " << dataTypeToString(node.varInfo->dataType) << "\n";
+        if (node.isAnalyzed) {
+            std::string value = node.token.value.value();
+            std::string tokenType = " [" + tokenTypeToString(node.token.type) + "]"; 
+            std::string type = ", Type: " + dataTypeToString(node.varInfo->dataType);
+            std::string isConst = (node.varInfo->isConstant && !node.forceDynamic) ? ", [CONST: " + node.varInfo->constValue + "]" : ", [NON-CONST]";
+
+            output_ << "Expr: " << value << tokenType << type << isConst << "\n";
+        } else {
+            output_ << "Expr: " << node.token.value.value_or("[no value]") 
+                << " [" << tokenTypeToString(node.token.type) << "], "
+                << "\n";
+        }
     }
 
     void visitBinaryOpT(const BinaryOpNode& node) override {
         indent();
-        output_ << "BinaryOp: " << node.op.value.value_or("[no op]") 
-            << " [" << tokenTypeToString(node.op.type) << "],"
-            << "Type: " << dataTypeToString(node.varInfo->dataType) << "\n";
-        
+        if (node.isAnalyzed) {
+            std::string value = node.op.value.value();
+            std::string tokenType = " [" + tokenTypeToString(node.op.type) + "]"; 
+            std::string type = ", Type: " + dataTypeToString(node.varInfo->dataType);
+            std::string isConst = node.varInfo->isConstant ? ", [CONST: " + node.varInfo->constValue + "]" : ", [NON-CONST]";
+
+            output_ << "BinaryOp: " << value << tokenType << type << isConst << "\n";
+        } else {
+            output_ << "BinaryOp: " << node.op.value.value_or("[no op]") 
+                << " [" << tokenTypeToString(node.op.type) << "]," << "\n";
+        }
+
         indent_++;
         node.left->visit(*this);
         node.right->visit(*this);

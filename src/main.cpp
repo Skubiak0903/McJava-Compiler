@@ -29,6 +29,7 @@ int main(int argc, char* argv[])
     bool dumpTokens = false;
     bool dumpCmds = false;
     bool dumpParseTree = false;
+    bool dumpAnalyzerTree = false;
     bool onlyAnalysis = false;
     bool silent = false;
 
@@ -63,6 +64,10 @@ int main(int argc, char* argv[])
 
     if (args.find("dump-parse-tree") != args.end()) {
         dumpParseTree = true;
+    }
+
+    if (args.find("dump-analyzer-tree") != args.end()) {
+        dumpAnalyzerTree = true;
     }
 
     if (args.find("analysis") != args.end()) {
@@ -152,7 +157,7 @@ int main(int argc, char* argv[])
     }
 
     if (dumpParseTree) {
-        std::ofstream file(filename + "-parser-tree.dump", std::ios::out);
+        std::ofstream file(filename + "-parse-tree.dump", std::ios::out);
         if (file.is_open()) {
             DebugGenerator debugGen(file);
             ast->visit(debugGen);
@@ -166,6 +171,15 @@ int main(int argc, char* argv[])
     Analyzer analyzer;
     ast->visit(analyzer);
     const auto variables = analyzer.getVariables();
+
+    if (dumpAnalyzerTree) {
+        std::ofstream file(filename + "-analyzer-tree.dump", std::ios::out);
+        if (file.is_open()) {
+            DebugGenerator debugGen(file);
+            ast->visit(debugGen);
+            file.close();
+        }
+    }
 
     clock_t tEndAnz = clock();
 
