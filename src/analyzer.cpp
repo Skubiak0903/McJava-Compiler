@@ -1,11 +1,13 @@
 #include <unordered_map>
 
 #include "./ast.hpp"
+#include "./options.hpp"
 
 class Analyzer : public ASTVisitor<std::shared_ptr<VarInfo>> {
 private:
     std::unordered_map<std::string, std::shared_ptr<VarInfo>> variables_;
-    size_t tempVarCount = 0;
+    size_t tempVarCount_ = 0;
+    const Options& options_;
 
 
     std::string getCurrentScoreboard() const {
@@ -15,11 +17,12 @@ private:
     }
 
     std::string getTempVarName() {
-        return "%" + std::to_string(tempVarCount++);
+        return "%" + std::to_string(tempVarCount_++);
     }
 
 public:
-    Analyzer() {}
+    Analyzer(Options& options) : 
+        options_(options) {}
 
 
     std::shared_ptr<VarInfo> visitCommandT(const CommandNode& node) override {
@@ -74,11 +77,8 @@ private:
         auto resultVar = node.value->visit(*this);
         std::string varName = node.name.value.value();
         
-        if (varName.empty()) {
-            error("VarDecl Error: Variable name is empty!");
-        }
-
-        if (!resultVar) error("VarDecl Error: Should be UNREACHABLE");
+        if (varName.empty()) error("VarDecl Error: Variable name is empty!");
+        if (!resultVar)      error("VarDecl Error: Should be UNREACHABLE");
 
         if (resultVar->dataType == DataType::UNKNOWN) {
             error("VarDecl Error: Could not infer type of variable " + varName);
@@ -212,23 +212,77 @@ private:
             return nullptr;
         }
 
+        if (node.op.type == TokenType::DIVIDE) {
+            if (rightVar->isConstant && rightVar->constValue == "0") {
+                error("Division by zero detected in binary operation");
+                return nullptr;
+            }
+        }
+
         bool isConstant = leftVar->isConstant && rightVar->isConstant;
         std::string constValue = "";
 
-        std::string storagePath;  // if its constatn then it should disappear in another steps of analyzing
-        if (isConstant) {
-            //result->constValue = ;
+        std::string storagePath;  // if its constant then it should disappear in another steps of analyzing
+
+        if (options_.doConstantFolding && (leftVar->dataType != DataType::INT || rightVar->dataType != DataType::INT)) {
+            // skip constant folding, because we dont support other datatypes than INT
+            isConstant = false;
+        }
+
+        if (isConstant && options_.doConstantFolding) {
+
+            // we only support integers for now
+            int leftValue  = std::stoi(leftVar ->constValue); 
+            int rightValue = std::stoi(rightVar->constValue);
+
+            int outValue;
             
-            // just add normal switch (+,-,*,/) and compute constant expression
+            switch (node.op.type)
+            {
+            // Arithmetics
+            case TokenType::PLUS :
+                outValue = leftValue + rightValue;
+                break;
+            case TokenType::MINUS :
+                outValue = leftValue - rightValue;
+                break;
+            case TokenType::MULTIPLY :
+                outValue = leftValue * rightValue;
+                break;
+            case TokenType::DIVIDE :
+                outValue = leftValue / rightValue;
+                break;
+
+            // comparison
+            case TokenType::EQUALS_EQUALS :
+                outValue = (leftValue == rightValue);
+                break;
+            case TokenType::NOT_EQUALS :
+                outValue = (leftValue != rightValue);
+                break;
+
+            case TokenType::LESS :
+                outValue = (leftValue < rightValue);
+                break;
+            case TokenType::GREATER :
+                outValue = (leftValue > rightValue);
+                break;
+            case TokenType::LESS_EQUAL :
+                outValue = (leftValue <= rightValue);
+                break;
+            case TokenType::GREATER_EQUAL :
+                outValue = (leftValue >= rightValue);
+                break;
             
-            // for now pretend its not constant
+            default:
+                error("SHOULD BE UNREACHABLE!");
+            }
+            
+            constValue = std::to_string(outValue);
+            storagePath = "%const_" + constValue; // this should dissapear in later stages of analyzing
+        } else {
             isConstant = false;
             constValue = "";
-
-            // disabled becouse constants folding is  not yet implemented and we treat constant binary operations as dynamic ones
-            //storagePath = "%binaryOP"; // temp name that should not make it into generation
-            storagePath = getTempVarName();
-        } else {
             storagePath = getTempVarName();
         }
 
@@ -257,9 +311,16 @@ private:
     }
 
     void analyzeIf(const IfNode& node) {
-        node.condition->visit(*this);
+        VarInfo varInfo = *node.condition->visit(*this);
         node.thenBranch->visit(*this);
         if (node.elseBranch) node.elseBranch->visit(*this);
+
+        if (varInfo.isConstant && !(varInfo.constValue == "0" || varInfo.constValue == "1")) {
+            error("If condition must have expression that returns true or false");
+        }
+
+        node.isConditionConstant = varInfo.isConstant;
+        node.conditionValue      = (varInfo.constValue == "1"); // 1 -> true, 0 -> false
 
         node.isAnalyzed = true;
     }
@@ -269,8 +330,15 @@ private:
         
         // we need to first invalidate variables that were changed in the loop body
         // and then we can analyze condition and body with correct information about which variables are constant
-        node.condition->visit(*this);
+        VarInfo varInfo = *node.condition->visit(*this);
         node.body->visit(*this);
+
+        if (varInfo.isConstant && !(varInfo.constValue == "0" || varInfo.constValue == "1")) {
+            error("While condition must have expression that returns true or false");
+        } 
+
+        node.isConditionConstant = varInfo.isConstant;
+        node.conditionValue      = (varInfo.constValue == "1"); // 1 -> true, 0 -> false
         
         node.isAnalyzed = true;
     }

@@ -151,6 +151,9 @@ public:
     std::unique_ptr<ASTNode> condition;
     std::unique_ptr<ASTNode> thenBranch;
     std::unique_ptr<ASTNode> elseBranch;  // can be nullptr
+
+    mutable bool isConditionConstant = false;
+    mutable bool conditionValue = false;
     
     IfNode(std::unique_ptr<ASTNode> condition, std::unique_ptr<ASTNode> thenBranch, std::unique_ptr<ASTNode> elseBranch)
         : condition(std::move(condition)), thenBranch(std::move(thenBranch)), elseBranch(std::move(elseBranch)) {}
@@ -165,6 +168,9 @@ class WhileNode : public ASTNode {
 public:
     std::unique_ptr<ASTNode> condition;
     std::unique_ptr<ASTNode> body;
+
+    mutable bool isConditionConstant = false;
+    mutable bool conditionValue = false;
     
     WhileNode(std::unique_ptr<ASTNode> condition, std::unique_ptr<ASTNode> body)
         : condition(std::move(condition)), body(std::move(body)) {}

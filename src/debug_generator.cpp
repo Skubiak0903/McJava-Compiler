@@ -85,7 +85,8 @@ public:
 
     void visitIfT(const IfNode& node) override {
         indent();
-        output_ << "IfStmt\n";
+        std::string isConst = node.isConditionConstant ? (" [CONST: " + std::to_string(node.conditionValue) + "]") : " [NON-CONST]";
+        output_ << "IfStmt" << isConst << "\n";
 
         indent_++;
         node.condition->visit(*this);
@@ -106,7 +107,8 @@ public:
 
     void visitWhileT(const WhileNode& node) override {
         indent();
-        output_ << "WhileLoop\n";
+        std::string isConst = node.isConditionConstant ? (" [CONST: " + std::to_string(node.conditionValue) + "]") : " [NON-CONST]";
+        output_ << "WhileLoop" << isConst << "\n";
 
         indent_++;
         node.condition->visit(*this);

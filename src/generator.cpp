@@ -5,6 +5,7 @@
 #include <optional>
 
 #include "./ast.hpp"
+#include "./options.hpp"
 
 namespace fs = std::filesystem;
 
@@ -14,28 +15,11 @@ struct Scope {
     std::unique_ptr<std::stringstream> output;
 };
 
-// Should be changed into widely used VarInfo 
-/*struct SimpleVarInfo {
-    //DataType dataType;
-    //int scopeLevel;      // Scope depth when the variable was initialized
-
-    // --- Minecraft Data (Backend) ---
-    VarStorageType storageType;
-    std::string storageIdent;  
-    std::string storagePath;
-    
-    // --- Constant Data ----
-    bool isConstant;
-    std::string constValue;
-};*/
-
-
 
 class FunctionGenerator : public ASTVisitor<std::shared_ptr<VarInfo>> {
 private:
     const fs::path& path_;
-    const std::string dp_prefix;
-    const std::string dp_path;
+    const Options& options_;
 
     std::unordered_map<std::string, std::shared_ptr<VarInfo>> variables_;
     std::vector<Scope> scopes_;
@@ -47,6 +31,10 @@ private:
 
     std::stringstream* getCurrentOutput() {
         return getCurrentScope().output.get();
+    }
+
+    std::string getFunctionNameSpace() {
+        return options_.dpPrefix + ":" + options_.dpPath;
     }
 
     void enterScope() {
@@ -83,26 +71,8 @@ private:
     }
 
 public:
-    FunctionGenerator(fs::path& path, std::string dp_prefix, std::string dp_path, std::unordered_map<std::string, std::shared_ptr<VarInfo>> variables) 
-        : path_(path), dp_prefix(dp_prefix), dp_path(dp_path), variables_(std::move(variables))  {
-
-            /*// convert variables
-            std::string currentSb = getCurrentScoreboard();
-            for (const auto& [name, varInfo] : variables_) {
-                // Ustawiamy identyfikator tylko jeśli Analyzer go nie podał
-                if (varInfo->storageIdent.empty()) {
-                    varInfo->storageIdent = currentSb;
-                }
-                
-                // Ustawiamy ścieżkę tylko jeśli jest pusta
-                if (varInfo->storagePath.empty()) {
-                    varInfo->storagePath = varInfo->name;
-                }
-                
-                // Zmieniamy typ tylko jeśli nie został ustawiony (np. na CONSTANT)
-                varInfo->storageType = VarStorageType::SCOREBOARD;
-            }*/
-        }
+    FunctionGenerator(fs::path& path, Options& options, std::unordered_map<std::string, std::shared_ptr<VarInfo>> variables) 
+        : path_(path), options_(options), variables_(std::move(variables)) {}
 
 
     std::shared_ptr<VarInfo> visitCommandT(const CommandNode& node) override {
@@ -166,6 +136,12 @@ private:
                 }
             }
 
+            BinaryOpNode* binOpNode = dynamic_cast<BinaryOpNode*>(arg.get());
+            if (binOpNode && binOpNode->varInfo->isConstant) {                
+                ss << "{\"text\":\"" << binOpNode->varInfo->constValue << "\"},";
+                continue;
+            }
+
             VarInfo tempVar = *arg->visit(*this);
             ss << "{\"score\":{\"name\":\"" << tempVar.storagePath << "\",\"objective\":\"" << tempVar.storageIdent << "\"}},";
         }
@@ -180,7 +156,7 @@ private:
     void generateVarDecl(const VarDeclNode& node) {
 
         // dont emit unused variables
-        if (!node.varInfo->isUsed) {
+        if (!node.varInfo->isUsed && options_.removeUnusedVars) {
             return;
         }
         
@@ -196,9 +172,9 @@ private:
         // but we still arent using the x variable
         // 
         // NOTE: it doest work when expression folding is disabled
-        /*if (node.varInfo->isConstant) { // we dont need to add node.varInfo->isUsed -> all unused were remove above
-        return;
-        }*/
+        if (node.varInfo->isConstant && node.varInfo->isUsed && options_.doConstantFolding) { // we dont need to add node.varInfo->isUsed -> all unused were remove above
+            return;
+        }
        
         std::string varName = node.varInfo->name;
         auto output = getCurrentOutput();
@@ -317,7 +293,7 @@ private:
             // 2 commands is the minimum for addition and there isn't any noticable gain in performace
 
             if (rightVar.isConstant && leftVar.isConstant) {
-                std::cout << "GEN WARNING: Encountered both sides of addition being constant, they should have been folded by the analyzer\n";
+                if (!options_.silent) std::cout << "GEN WARNING: Encountered both sides of addition being constant, they should have been folded by the analyzer\n";
                 *output << "#Debug: Scoreboard ADD -> 2 constants\n";
                 *output << "scoreboard players set " << tempVarName << " " << tempVarSb << " " << leftVar.constValue << "\n";
                 *output << "scoreboard players add " << tempVarName << " " << tempVarSb << " " << rightVar.constValue << "\n";
@@ -340,7 +316,7 @@ private:
         case TokenType::MINUS : {
 
             if (rightVar.isConstant && leftVar.isConstant) {
-                std::cout << "GEN WARNING: Encountered both sides of subtraction being constant, they should have been folded by the analyzer\n";
+                if (!options_.silent) std::cout << "GEN WARNING: Encountered both sides of subtraction being constant, they should have been folded by the analyzer\n";
                 *output << "#Debug: Scoreboard REMOVE -> 2 constants\n";
                 *output << "scoreboard players set " << tempVarName << " " << tempVarSb << " " << leftVar.constValue << "\n";
                 *output << "scoreboard players remove " << tempVarName << " " << tempVarSb << " " << rightVar.constValue << "\n";
@@ -382,6 +358,9 @@ private:
             std::string comparator = node.op.value.value();
 
             if (leftVar.isConstant && rightVar.isConstant) {
+                // handled by if(rightVar.isConstant) -> comparision needs at least one dynamic variable, so we cannot optimize it,
+                // and it shouldn't appear because of constant folding 
+
                 //error("Both sides of comparison operator cannot be constant in codegen, they should have been folded by the analyzer");
                 //break;
             }
@@ -515,54 +494,63 @@ private:
         // if function 'then' returns 1 then run function 'else'
         // function then: return 1 unless condition is met
 
-        // then scope
-        enterScope();
-        auto thenOutput = getCurrentOutput();
-        std::string thenScopeName = getCurrentScope().name;
+        // STATIC :
+        if (node.isConditionConstant) {
+            ASTNode* branch     = node.conditionValue == true ? node.thenBranch.get() : node.elseBranch.get();
+            std::string comment = node.conditionValue == true ? "# Static Then Body\n" : "# Static Else Body\n";
+            
+            auto mainOutput = getCurrentOutput();
+            *mainOutput << comment;
+            appendBranch(branch);
+    
+            return;
+        }
+
+        /// DYNAMIC :
         VarInfo conditionVar = *node.condition->visit(*this);      
 
         // then branch
-        *thenOutput << "# Then Body\n";
-
-        *thenOutput << "execute unless score " << conditionVar.storagePath << " " << conditionVar.storageIdent << " matches 1 run return 1\n";
-        auto thenScopeNode = dynamic_cast<ScopeNode*>(node.thenBranch.get());
-        if (!thenScopeNode) {
-            // single statement
-            node.thenBranch->visit(*this);
-        } else {
-            // body is a scope
-            for (const auto& stmt : thenScopeNode->statements) {
-                stmt->visit(*this);
-            }
-        }
-        exitScope();
+        std::string thenComment = "# Then Body\n";
+        std::string thenAdditional = "execute unless score " + conditionVar.storagePath + " " + conditionVar.storageIdent + " matches 1 run return 1\n";
+        std::string thenScopeName = generateBranch(node.thenBranch.get(), thenComment + thenAdditional);
 
 
         // else scope
-        enterScope();
-        auto elseOutput = getCurrentOutput();
-        std::string elseScopeName = getCurrentScope().name;
+        std::string elseComment = "# Else Body\n";
+        std::string elseScopeName = generateBranch(node.elseBranch.get(), elseComment);
 
-        // else branch
-        *elseOutput << "# Else Body\n";
-        auto elseScopeNode = dynamic_cast<ScopeNode*>(node.elseBranch.get());
-        if (!elseScopeNode) {
+        auto mainOutput = getCurrentOutput();
+        *mainOutput << "# Check condition  'if'\n";        
+        // if thenScope branch returns 1 then execute else branch
+        *mainOutput << "execute if function " << getFunctionNameSpace() << thenScopeName << " run function " << getFunctionNameSpace() << elseScopeName << "\n";
+    }
+
+    std::string generateBranch(ASTNode* body, const std::string& additionalBefore = "", const std::string& additionalAfter = "") {
+        enterScope();
+        std::string scopeName = getCurrentScope().name;
+        auto output = getCurrentOutput();
+
+        *output << additionalBefore;
+
+        appendBranch(body);
+
+        *output << additionalAfter;
+        
+        exitScope();
+        return scopeName;
+    }
+
+    void appendBranch(ASTNode* body){
+        auto scopeNode = dynamic_cast<ScopeNode*>(body);
+        if (!scopeNode) {
             // single statement
-            node.elseBranch->visit(*this);
+            body->visit(*this);
         } else {
             // body is a scope
-            for (const auto& stmt : elseScopeNode->statements) {
+            for (const auto& stmt : scopeNode->statements) {
                 stmt->visit(*this);
             }
         }
-        exitScope();
-
-        auto mainOutput = getCurrentOutput();
-
-        *mainOutput << "# Check condition  'if'\n";        
-        // if thenScope branch returns 1 then execute else branch
-        *mainOutput << "execute if function " << dp_prefix << ":" << dp_path << thenScopeName << " run function " << dp_prefix << ":" << dp_path << elseScopeName << "\n";
-
     }
 
 
@@ -570,34 +558,29 @@ private:
         // schema:
         // if condition then run function 'then'
 
-        // then scope
-        enterScope();
-        auto thenOutput = getCurrentOutput();
-        std::string thenScopeName = getCurrentScope().name;
-
+        // check if the branch will even fire
+        // NOTE: if we would want to implement debug mode or debbuger we need to let this pass so the loop body will be generated
+        if (node.isConditionConstant && node.conditionValue == false) return;
+        
         // then branch
-        *thenOutput << "# Then Body\n";
-        auto scopeNode = dynamic_cast<ScopeNode*>(node.thenBranch.get());
-        if (!scopeNode) {
-            // single statement
-            node.thenBranch->visit(*this);
-        } else {
-            // body is a scope
-            for (const auto& stmt : scopeNode->statements) {
-                stmt->visit(*this);
-            }
-        }
-        exitScope();
+        std::string comment = "# Then Body\n";
+        std::string thenScopeName = generateBranch(node.thenBranch.get(), comment);
+        
 
         auto mainOutput = getCurrentOutput();
         // first check to enter the loop
         *mainOutput << "# Check condition to enter the 'then' function\n";
+
         VarInfo conditionVar = *node.condition->visit(*this);        
-        *mainOutput << "execute if score " << conditionVar.storagePath << " " << conditionVar.storageIdent << " matches 1 run function " << dp_prefix << ":" << dp_path << thenScopeName << "\n";
+        *mainOutput << "execute if score " << conditionVar.storagePath << " " << conditionVar.storageIdent << " matches 1 run function " << getFunctionNameSpace() << thenScopeName << "\n";
+    
     }
 
-
     void generateWhile(const WhileNode& node) {
+        // check if the loop will even start
+        // NOTE: if we would want to implement debug mode or debbuger we need to let this pass so the loop body will be generated
+        if (node.isConditionConstant && node.conditionValue == false) return;
+
         // loop scope
         enterScope();
         auto whileOutput = getCurrentOutput();
@@ -605,30 +588,37 @@ private:
 
         // loop body
         *whileOutput << "# Loop Body\n";
-        auto scopeNode = dynamic_cast<ScopeNode*>(node.body.get());
-        if (!scopeNode) {
-            // single statement
-            node.body->visit(*this);
-        } else {
-            // body is a scope
-            for (const auto& stmt : scopeNode->statements) {
-                stmt->visit(*this);
-            }
-        }
+        appendBranch(node.body.get());
 
         // recheck condition at the end of the loop
         *whileOutput << "# Recheck condition at the end of the loop\n";
-        VarInfo recheckVar = *node.condition->visit(*this);  
-        *whileOutput << "execute if score " << recheckVar.storagePath << " " << recheckVar.storageIdent << " matches 1 run function " << dp_prefix << ":" << dp_path << scopeName << "\n";
+        *whileOutput << prepareWhileCondition(node, scopeName);
 
         exitScope();
-
-        auto mainOutput = getCurrentOutput();
+        
+        
         // first check to enter the loop
+        auto mainOutput = getCurrentOutput();
         *mainOutput << "# Check condition to enter the loop\n";
-        VarInfo conditionVar = *node.condition->visit(*this);        
-        *mainOutput << "execute if score " << conditionVar.storagePath << " " << conditionVar.storageIdent << " matches 1 run function " << dp_prefix << ":" << dp_path << scopeName << "\n";
+        *mainOutput << prepareWhileCondition(node, scopeName);
+        
     }
+
+    std::string prepareWhileCondition(const WhileNode& node, const std::string scopeName) {
+        if (node.isConditionConstant) {
+            // static condition check -> always the same
+            if (node.conditionValue == true) {
+                return "function " + getFunctionNameSpace() + scopeName + "\n";
+            }
+        } else {
+            // generate condition and then check
+            VarInfo conditionVar = *node.condition->visit(*this);        
+            return "execute if score " + conditionVar.storagePath + " " + conditionVar.storageIdent + " matches 1 run function " + getFunctionNameSpace() + scopeName + "\n";
+        }
+        return "";
+    }
+
+
 
 
     void generateScope(const ScopeNode& node) {

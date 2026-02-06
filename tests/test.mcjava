@@ -7,3 +7,11 @@ say x > 1
 
 y = x + 5
 x = y
+
+x = x + 1;
+
+if (x > y) {
+    say x " > " y;
+} else {
+    say x " < " y;
+}

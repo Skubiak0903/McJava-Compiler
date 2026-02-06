@@ -14,28 +14,45 @@
 #include "./analyzer.cpp"
 
 #include "./registries/SimplifiedCommandRegistry.hpp"
+#include "./options.hpp"
 
 namespace fs = std::filesystem;
 
+void printHelp() {
+    std::cout << "Usage: mcjava <input.mcjava> [args]\n\n";
+    std::cout << "Arguments:\n";
+    std::cout << "  -dump-tokens                Dump tokens to a file\n";
+    std::cout << "  -dump-cmds                  Dump all commands list to a file\n";
+    std::cout << "  -dump-parse-tree            Dump the parse tree to a file\n";
+    std::cout << "  -dump-analyzer-tree         Dump the analyzer tree to a file\n";
+    std::cout << "  -analysis                   Only perform analysis, skip generation\n";
+    std::cout << "  -disable-constant-folding   Disable constant folding optimization\n";
+    std::cout << "  -keep-unused-vars           Keep unused variables in output\n";
+    std::cout << "  -silent                     Suppress all output except errors\n";
+    std::cout << "  -mcdoc-path=<path>          Path to mcdoc commands.json (default: ./mcdoc/commands.json)\n";
+    std::cout << "  -dp-prefix=<prefix>         Datapack function prefix (default: mcjava)\n";
+    std::cout << "  -dp-path=<path>             Datapack function path (default: empty)\n";
+}
+
 int main(int argc, char* argv[])
 {   
+    // Check for help flag before other argument processing
+    if (argc >= 2) {
+        std::string firstArg = argv[1];
+        if (firstArg == "-help" || firstArg == "--help") {
+            printHelp();
+            return EXIT_SUCCESS;
+        }
+    }
+
     if (argc < 2) {
         std::cerr << "Incorrect usage. Correct usage is..." << std::endl;
-        std::cerr << "mcjava.exe <input.mcjava> [args]" << std::endl;
+        std::cerr << "mcjava <input.mcjava> [args]" << std::endl;
+        std::cerr << "or use: mcjava -help" << std::endl;
         return EXIT_FAILURE;
     }
 
-    // Arguments
-    bool dumpTokens = false;
-    bool dumpCmds = false;
-    bool dumpParseTree = false;
-    bool dumpAnalyzerTree = false;
-    bool onlyAnalysis = false;
-    bool silent = false;
-
-    std::string mcdoc_path  = "./mcdoc/commands.json";
-    std::string dp_prefix   = "mcjava";
-    std::string dp_path     = "";
+    Options options;
 
     std::unordered_map<std::string,std::string> args;
     for (int i = 2; i < argc; i++) {
@@ -53,45 +70,46 @@ int main(int argc, char* argv[])
         }
     }
 
+    auto hasFlag = [&args](const std::string& key) {
+        return args.find(key) != args.end();
+    };
+
     // Match arguments
-    if (args.find("dump-tokens") != args.end()) {
-        dumpTokens = true;
+    if (hasFlag("help")) {
+        printHelp();
+        return EXIT_SUCCESS;
     }
 
-    if (args.find("dump-cmds") != args.end()) {
-        dumpCmds = true;
+    // Dump
+    if (hasFlag("dump-tokens"))         options.dumpTokens          = true;
+    if (hasFlag("dump-cmds"))           options.dumpCmds            = true;
+    if (hasFlag("dump-parse-tree"))     options.dumpParseTree       = true;
+    if (hasFlag("dump-analyzer-tree"))  options.dumpAnalyzerTree    = true;
+
+    // Analysis & Generation
+    if (hasFlag("analysis"))                    options.onlyAnalysis        = true;
+    if (hasFlag("disable-constant-folding"))    options.doConstantFolding   = false;
+    if (hasFlag("keep-unused-vars"))            options.removeUnusedVars    = false;
+    
+    // Other
+    if (hasFlag("silent")) options.silent = true;
+    
+    // Paths
+    if (hasFlag("mcdoc-path")) options.mcdocPath = args["mcdoc-path"];
+    if (hasFlag("dp-prefix")) options.dpPrefix = args["dp-prefix"];
+
+    if (hasFlag("dp-path")) {
+        options.dpPath = args["dp-path"];
+
+        // make sure that the path always ends with '/'
+        if (options.dpPath.length() > 0 && options.dpPath.back() != '/') {
+            options.dpPath += '/';
+
+            if (!options.silent) {
+                printf("Info: Appended missing '/' to datapack path.\n");
+            }
+        }
     }
-
-    if (args.find("dump-parse-tree") != args.end()) {
-        dumpParseTree = true;
-    }
-
-    if (args.find("dump-analyzer-tree") != args.end()) {
-        dumpAnalyzerTree = true;
-    }
-
-    if (args.find("analysis") != args.end()) {
-        onlyAnalysis = true;
-    }
-
-    if (args.find("silent") != args.end()) {
-        silent = true;
-    }
-
-
-
-    if (args.find("mcdoc-path") != args.end()) {
-        mcdoc_path = args["mcdoc-path"];
-    }
-
-    if (args.find("dp-prefix") != args.end()) {
-        dp_prefix = args["dp-prefix"];
-    }
-
-    if (args.find("dp-path") != args.end()) {
-        dp_path = args["dp-path"];
-    }
-
 
 
     // First time measurement
@@ -114,9 +132,9 @@ int main(int argc, char* argv[])
     // load simplified commands
     SimplifiedCommandRegistry reg;
     std::string err;
-    if (!reg.loadFromFile(mcdoc_path, &err)) { std::cerr << "cmd load error: " << err << "\n"; return EXIT_FAILURE; }
+    if (!reg.loadFromFile(options.mcdocPath, &err)) { std::cerr << "cmd load error: " << err << "\n"; return EXIT_FAILURE; }
 
-    if (dumpCmds) {
+    if (options.dumpCmds) {
         std::fstream file(filename + "-cmds.dump", std::ios::out);
         for (std::string cmd : reg.getRoots()) {
             file << cmd << std::endl;
@@ -135,7 +153,7 @@ int main(int argc, char* argv[])
     clock_t tEndTok = clock();
 
     // if dump tokens argument is set, dump all tokens to a  separate file
-    if (dumpTokens) {
+    if (options.dumpTokens) {
         std::fstream file(filename + "-token.dump", std::ios::out);
         for (Token token : tokens) {
             if (token.value.has_value()) {
@@ -156,7 +174,7 @@ int main(int argc, char* argv[])
         return EXIT_FAILURE;
     }
 
-    if (dumpParseTree) {
+    if (options.dumpParseTree) {
         std::ofstream file(filename + "-parse-tree.dump", std::ios::out);
         if (file.is_open()) {
             DebugGenerator debugGen(file);
@@ -168,11 +186,11 @@ int main(int argc, char* argv[])
     // end of parsing time measurement
     clock_t tEndPar = clock();
 
-    Analyzer analyzer;
+    Analyzer analyzer(options);
     ast->visit(analyzer);
     const auto variables = analyzer.getVariables();
 
-    if (dumpAnalyzerTree) {
+    if (options.dumpAnalyzerTree) {
         std::ofstream file(filename + "-analyzer-tree.dump", std::ios::out);
         if (file.is_open()) {
             DebugGenerator debugGen(file);
@@ -184,17 +202,19 @@ int main(int argc, char* argv[])
     clock_t tEndAnz = clock();
 
     // if -analysis then dont generate functions
-    if (onlyAnalysis) {
+    if (options.onlyAnalysis) {
         auto realEnd = std::chrono::steady_clock::now();
         
         // Print and format gathered times
-        if (silent) return EXIT_SUCCESS;
-        printf("Time parsing mcdoc: %.2fs\n", (double)(tEndReg - tStart)/CLOCKS_PER_SEC);
-        printf("Time tokenizing: %.2fs\n", (double)(tEndTok - tEndReg)/CLOCKS_PER_SEC);
-        printf("Time parsing: %.2fs\n", (double)(tEndPar - tEndTok)/CLOCKS_PER_SEC);
-        printf("Time analyzing: %.2fs\n", (double)(tEndAnz - tEndPar)/CLOCKS_PER_SEC);
-        printf("Time taken: %.4fs\n", (double)(clock() - tStart)/CLOCKS_PER_SEC);
-        printf("Real time taken: %.4fs\n", std::chrono::duration<double>(realEnd - realStart).count());
+        if (!options.silent) {
+            printf("Time parsing mcdoc: %.2fs\n", (double)(tEndReg - tStart)/CLOCKS_PER_SEC);
+            printf("Time tokenizing: %.2fs\n", (double)(tEndTok - tEndReg)/CLOCKS_PER_SEC);
+            printf("Time parsing: %.2fs\n", (double)(tEndPar - tEndTok)/CLOCKS_PER_SEC);
+            printf("Time analyzing: %.2fs\n", (double)(tEndAnz - tEndPar)/CLOCKS_PER_SEC);
+            printf("Time taken: %.4fs\n", (double)(clock() - tStart)/CLOCKS_PER_SEC);
+            printf("Real time taken: %.4fs\n", std::chrono::duration<double>(realEnd - realStart).count());
+        }
+
         return EXIT_SUCCESS;
     }
 
@@ -209,8 +229,8 @@ int main(int argc, char* argv[])
         }
 
         fs::path path(filename);
-        if (!silent) std::cout << "Path: " << path << "\n";
-        FunctionGenerator funcGen(path, dp_prefix, dp_path, variables);
+        if (!options.silent) std::cout << "Path: " << path << "\n";
+        FunctionGenerator funcGen(path, options, variables);
         ast->visit(funcGen);
     }
     
@@ -219,13 +239,15 @@ int main(int argc, char* argv[])
     auto realEnd = std::chrono::steady_clock::now();
 
     // Print and format gathered times
-    if (silent) return EXIT_SUCCESS;
-    printf("Time parsing mcdoc: %.2fs\n", (double)(tEndReg - tStart)/CLOCKS_PER_SEC);
-    printf("Time tokenizing: %.2fs\n", (double)(tEndTok - tEndReg)/CLOCKS_PER_SEC);
-    printf("Time parsing: %.2fs\n", (double)(tEndPar - tEndTok)/CLOCKS_PER_SEC);
-    printf("Time analyzing: %.2fs\n", (double)(tEndAnz - tEndPar)/CLOCKS_PER_SEC);
-    printf("Time generating: %.2fs\n", (double)(tEndGen - tEndPar)/CLOCKS_PER_SEC);
-    printf("Time taken: %.4fs (CPU)\n", (double)(clock() - tStart)/CLOCKS_PER_SEC);
-    printf("Real time taken: %.4fs\n", std::chrono::duration<double>(realEnd - realStart).count());
+    if (!options.silent) {
+        printf("Time parsing mcdoc: %.2fs\n", (double)(tEndReg - tStart)/CLOCKS_PER_SEC);
+        printf("Time tokenizing: %.2fs\n", (double)(tEndTok - tEndReg)/CLOCKS_PER_SEC);
+        printf("Time parsing: %.2fs\n", (double)(tEndPar - tEndTok)/CLOCKS_PER_SEC);
+        printf("Time analyzing: %.2fs\n", (double)(tEndAnz - tEndPar)/CLOCKS_PER_SEC);
+        printf("Time generating: %.2fs\n", (double)(tEndGen - tEndAnz)/CLOCKS_PER_SEC);
+        printf("Time taken: %.4fs (CPU)\n", (double)(clock() - tStart)/CLOCKS_PER_SEC);
+        printf("Real time taken: %.4fs\n", std::chrono::duration<double>(realEnd - realStart).count());
+    }
+
     return EXIT_SUCCESS;
 }
