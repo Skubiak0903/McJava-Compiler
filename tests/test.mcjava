@@ -1,14 +1,40 @@
-x = 5;
-y = 10;
+// TODO: Fails due to lack of lexical scoping; variables currently reside in a single global namespace.
 
-say y
+@External userResponse = 0; 
+@External started      = 0;
+@External min          = 0;
+@External max          = 0;
+@External attempts     = 0;
+@External currentGuess = 0;
 
-say x > 1
+if (started == 0) {
+    min = 0;
+    max = 100;
+    attempts = 1;
+    currentGuess = (min + max) / 2;
 
-y = x + 5
-x = y
+    say "Game Started! Think of a number (" min " - " max ")";
+    say "Is it " currentGuess "? (0-less, 1-more)";
+    started = 1;
+} else {
+    // 1. Najpierw aktualizujemy zakres na podstawie poprzedniego strzału
+    if (userResponse == 1) {
+        min = currentGuess + 1;
+    } else {
+        max = currentGuess - 1;
+    }
 
-x = x + 1;
+    // 2. Liczymy nowy strzał
+    currentGuess = (min + max) / 2;
+    attempts = attempts + 1;
 
-if (x > y) say x " > " y;
-if (x < y) say x " < " y;
+    // 3. Sprawdzamy, czy zakres się domknął
+    if (min >= max) {
+        say "I found it! It must be " min;
+        say "Total attempts: " attempts;
+        started = 0; // Koniec gry
+    } else {
+        say "Is it " currentGuess "? (0-less, 1-more)";
+        say "Range: " min " to " max; // Pomocne do debugowania Twojego parsera
+    }
+}

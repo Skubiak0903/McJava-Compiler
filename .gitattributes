@@ -1,0 +1,6 @@
+# Ignore specific directories 
+libs/** linguist-detectable=false
+mcdoc/** linguist-detectable=false
+
+# Ignore all json files
+*.json linguist-detectable=false

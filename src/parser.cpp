@@ -38,7 +38,8 @@ private:
     std::vector<Token> tokens_;
     SimplifiedCommandRegistry& reg_;
     size_t pos_;
-
+    
+    std::vector<Annotation> pendingAnnotations;
     
 
     // ===== HELPER METHODS =====   
@@ -66,38 +67,66 @@ private:
 
     std::unique_ptr<ASTNode> parseStatement() {
         skipNewLines();
+        if (!hasTokens()) return nullptr;
+
+        // 0. Annotations, @Annotation
+        while (hasTokens() && peek().type == TokenType::ANNOTATION) {
+            // dont return, just append all annotations into the list
+            parseAnnotation();
+            skipNewLines();
+        }
 
         if (!hasTokens()) return nullptr;
 
         Token tok = peek();
+        std::unique_ptr<ASTNode> node;
 
         // 1. Variable assignment (x = 5)
         if (tok.type == TokenType::IDENT && peek(1).type == TokenType::EQUALS) {
-            return parseVarDecl();
+            node = parseVarDecl();
         }
-        
+
         // 2. Minecraft command (say "hello")
-        if (tok.type == TokenType::CMD_KEY) {
-            return parseCommand();
+        else if (tok.type == TokenType::CMD_KEY) {
+            node = parseCommand();
         }
 
         // 3. If statement
-        if (tok.type == TokenType::IF) {
-            return parseIf();
+        else if (tok.type == TokenType::IF) {
+            node = parseIf();
         }
 
         // 4. While loop
-        if (tok.type == TokenType::WHILE) {
-            return parseWhile();
+        else if (tok.type == TokenType::WHILE) {
+            node = parseWhile();
         }
         
         // 5. Scope { ... }
-        if (tok.type == TokenType::OPEN_BRACE) {
-            return parseScope();
+        else if (tok.type == TokenType::OPEN_BRACE) {
+            node = parseScope();
+        }
+        
+
+        // append adnotations
+        if (node) {
+            if (!pendingAnnotations.empty()) {
+                node->annotations = pendingAnnotations;
+                pendingAnnotations.clear();
+            }
+
+            return node;
         }
 
         error(true, tok.line, tok.col, "Unknown statement type: ", tokenTypeToString(tok.type));
         return nullptr;
+    }
+
+    void parseAnnotation() {
+        Token name = consume(); // consume ANNOTATION
+        if (!name.value.has_value()) error("Encountered annotation without a name");
+
+        // push_back annotation struct
+        pendingAnnotations.push_back({name.value.value()});
     }
 
 
@@ -105,7 +134,7 @@ private:
         Token name = consume(); // consume IDENT
         consume(); // consume '='
 
-        if (!name.value.has_value()) error("Encountered variable assignation with unknown name", name);
+        if (!name.value.has_value()) error("Encountered variable assignation without name");
         auto value = parseExpression();
 
         return std::make_unique<VarDeclNode>(name, std::move(value));

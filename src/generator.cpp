@@ -159,7 +159,15 @@ private:
         if (!node.varInfo->isUsed && options_.removeUnusedVars) {
             return;
         }
+
+        bool isExternal = false;
         
+        for (const auto& anno : node.annotations) {
+            if (anno.name == "External" || anno.name == "Global") {
+                isExternal = true;
+            }
+        }
+
         // if its used but its constant then also dont emit it
         // example:
         //   x = 10
@@ -172,12 +180,35 @@ private:
         // but we still arent using the x variable
         // 
         // NOTE: it doest work when expression folding is disabled
-        if (node.varInfo->isConstant && node.varInfo->isUsed && options_.doConstantFolding) { // we dont need to add node.varInfo->isUsed -> all unused were remove above
+        if (node.varInfo->isConstant && node.varInfo->isUsed && options_.doConstantFolding && !isExternal) { // we dont need to add node.varInfo->isUsed -> all unused were remove above
             return;
         }
-       
+
+
+
         std::string varName = node.varInfo->name;
         auto output = getCurrentOutput();
+
+        // if is external check if value existis and if not then set it to default value
+        if (isExternal) {
+            // execute store success score %i mcjava_sb_scope_0 run scoreboard players get started mcjava_sb_scope_0
+            // execute if score %i mcjava_sb_scope_0 matches 0 run scoreboard players set %i mcjava_sb_scope_0 10
+
+            *output << "#Debug: External variable " << varName << "\n";
+            *output << "execute store success score " << "%e" << " " << node.varInfo->storageIdent << " run scoreboard players get " << varName << " " << node.varInfo->storageIdent << "\n";
+            
+            if (!node.varInfo->constValue.empty()) {
+                *output << "execute if score %e " << node.varInfo->storageIdent << " matches 0 run scoreboard players set " << varName << " " << node.varInfo->storageIdent << " " << node.varInfo->constValue << "\n";
+            } else {
+                VarInfo tempVar = *node.value->visit(*this);
+
+                *output << "execute if score %e " << node.varInfo->storageIdent << " matches 0 run scoreboard players operation " << varName << " " << node.varInfo->storageIdent << " = " << tempVar.storagePath << " " << tempVar.storageIdent << "\n";
+            }
+            return;
+        }
+
+       
+
        
         if (node.varInfo->isConstant) {
             *output << "#Debug: Constant var\n";

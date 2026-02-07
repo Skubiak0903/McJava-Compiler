@@ -1,0 +1,14 @@
+x = 5;
+y = 10;
+
+say y
+
+say x > 1
+
+y = x + 5
+x = y
+
+x = x + 1;
+
+if (x > y) say x " > " y;
+if (x < y) say x " < " y;

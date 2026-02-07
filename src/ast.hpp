@@ -19,6 +19,13 @@ enum class VarStorageType {
 };
 
 
+struct Annotation {
+    std::string name;
+    // in the future -> annotation arguments -> @Annotation(type = "special") or something similar
+};
+
+
+
 
 struct VarInfo {
     std::string name;
@@ -69,6 +76,8 @@ public:
     void visit(ASTVisitor<void>& visitor) const {
         accept(visitor);
     }
+
+    std::vector<Annotation> annotations = {};
 
     // --- Semantic Data (Adnotations) ---
     mutable bool isAnalyzed = false;

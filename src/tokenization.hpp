@@ -31,7 +31,7 @@ enum class TokenType {
     WHILE, FOR, IF, ELSE, RETURN, TRUE, FALSE,
     
     // Dynamic
-    IDENT, CMD_KEY,
+    IDENT, CMD_KEY, ANNOTATION,
     
     // Special
     NEW_LINE, END_OF_FILE,
@@ -81,52 +81,53 @@ const inline std::unordered_map<std::string, TokenType> DOUBLE_CHARS = {
 inline std::string tokenTypeToString(TokenType type) {
     switch(type) {
         // Literals
-        case TokenType::INT_LIT : return "Int";
-        case TokenType::FLOAT_LIT : return "Float"; 
-        case TokenType::STRING_LIT : return "String";
+        case TokenType::INT_LIT     : return "Int";
+        case TokenType::FLOAT_LIT   : return "Float"; 
+        case TokenType::STRING_LIT  : return "String";
         
         // Operators
-        case TokenType::PLUS : return "PLUS (+)";
-        case TokenType::MINUS : return "MINUS (-)";
-        case TokenType::MULTIPLY : return "MULTIPLY (*)";
-        case TokenType::DIVIDE : return "DIVIDE (/)";
-        case TokenType::EQUALS : return "EQUALS (=)";
-        case TokenType::EQUALS_EQUALS : return "EQUAL (==)";
-        case TokenType::NOT_EQUALS : return "NOT EQUAL (!=)";
-        case TokenType::LESS : return "LESS (<)";
-        case TokenType::GREATER : return "GREATER (>)";
-        case TokenType::LESS_EQUAL : return "LESS OR EQUAL (<=)";
-        case TokenType::GREATER_EQUAL : return "GREATER OR EQUAL (>=)";
+        case TokenType::PLUS            : return "PLUS (+)";
+        case TokenType::MINUS           : return "MINUS (-)";
+        case TokenType::MULTIPLY        : return "MULTIPLY (*)";
+        case TokenType::DIVIDE          : return "DIVIDE (/)";
+        case TokenType::EQUALS          : return "EQUALS (=)";
+        case TokenType::EQUALS_EQUALS   : return "EQUAL (==)";
+        case TokenType::NOT_EQUALS      : return "NOT EQUAL (!=)";
+        case TokenType::LESS            : return "LESS (<)";
+        case TokenType::GREATER         : return "GREATER (>)";
+        case TokenType::LESS_EQUAL      : return "LESS OR EQUAL (<=)";
+        case TokenType::GREATER_EQUAL   : return "GREATER OR EQUAL (>=)";
 
         // Brackets
-        case TokenType::OPEN_PAREN : return "(";
-        case TokenType::CLOSE_PAREN : return ")";
-        case TokenType::OPEN_BRACE : return "{";
-        case TokenType::CLOSE_BRACE : return "}";
-        case TokenType::OPEN_BRACKET : return "[";
-        case TokenType::CLOSE_BRACKET : return "]";
+        case TokenType::OPEN_PAREN      : return "(";
+        case TokenType::CLOSE_PAREN     : return ")";
+        case TokenType::OPEN_BRACE      : return "{";
+        case TokenType::CLOSE_BRACE     : return "}";
+        case TokenType::OPEN_BRACKET    : return "[";
+        case TokenType::CLOSE_BRACKET   : return "]";
         
         // Interpunction
-        case TokenType::SEMI_COLON : return ";";
-        case TokenType::COMMA : return ",";
-        case TokenType::DOT : return ".";
+        case TokenType::SEMI_COLON  : return ";";
+        case TokenType::COMMA       : return ",";
+        case TokenType::DOT         : return ".";
 
         
         // Keywords
-        case TokenType::WHILE : return "while";
-        case TokenType::FOR : return "for";
-        case TokenType::IF : return "if";
-        case TokenType::ELSE : return "else";
-        case TokenType::RETURN : return "return";
-        case TokenType::TRUE : return "true";
-        case TokenType::FALSE : return "false";
+        case TokenType::WHILE   : return "while";
+        case TokenType::FOR     : return "for";
+        case TokenType::IF      : return "if";
+        case TokenType::ELSE    : return "else";
+        case TokenType::RETURN  : return "return";
+        case TokenType::TRUE    : return "true";
+        case TokenType::FALSE   : return "false";
 
         // Dynamic
-        case TokenType::IDENT : return "IDENTIFIER";
-        case TokenType::CMD_KEY : return "COMMAND_KEY";
+        case TokenType::IDENT       : return "IDENTIFIER";
+        case TokenType::CMD_KEY     : return "COMMAND_KEY";
+        case TokenType::ANNOTATION  : return "ANNOTATION";
         
         // Special
-        case TokenType::NEW_LINE: return "NEW_LINE";
+        case TokenType::NEW_LINE    : return "NEW_LINE";
         case TokenType::END_OF_FILE : return "END_OF_FILE";
         default: return "UNKNOWN";
     }
@@ -213,6 +214,7 @@ public:
                                     .line = line, .col = col });
                 }
 
+                buf.clear();
                 continue;
             }
 
@@ -250,6 +252,25 @@ public:
 
                 consume(); // skip closing quote
                 tokens.push_back({ .type = TokenType::STRING_LIT, .value = buf, .line = line, .col = col });
+                buf.clear();
+                continue;
+            }
+
+            // annotations
+            if (value == '@') {
+                consume(); // consume '@'
+
+                // consume annotation name
+                while (peek().has_value() && std::isalnum(peek().value()) && peek().value() != '_') {
+                    buf.push_back(consume());
+                }
+
+                if (buf.empty()) {
+                    std::cerr << "Empty annotation name at line " << line << ", column " << col << std::endl;
+                    exit(EXIT_FAILURE);
+                }
+
+                tokens.push_back({ .type = TokenType::ANNOTATION, .value = buf, .line = line, .col = col });
                 buf.clear();
                 continue;
             }

@@ -11,10 +11,20 @@ private:
         for (int i = 0; i < indent_; ++i) output_ << "  ";
     }
 
+    void printAnnotations(const ASTNode& node) {
+        indent();
+        for (Annotation ann : node.annotations) {
+            output_ << "@" << ann.name << ", ";
+        }
+        output_ << "\n";
+    }
+
 public:
     DebugGenerator(std::ostream& out) : output_(out) {}
 
     void visitCommandT(const CommandNode& node) override {
+        printAnnotations(node);
+
         indent();
         output_ << "Command: " << node.command.value.value_or("[no cmd]") << "\n";
 
@@ -28,6 +38,8 @@ public:
     }
     
     void visitVarDeclT(const VarDeclNode& node) override {
+        printAnnotations(node);
+
         indent();
         
         if (node.isAnalyzed) {
@@ -48,6 +60,8 @@ public:
     }
 
     void visitExprT(const ExprNode& node) override {
+        printAnnotations(node);
+
         indent();
         if (node.isAnalyzed) {
             std::string value = node.token.value.value();
@@ -64,6 +78,8 @@ public:
     }
 
     void visitBinaryOpT(const BinaryOpNode& node) override {
+        printAnnotations(node);
+
         indent();
         if (node.isAnalyzed) {
             std::string value = node.op.value.value();
@@ -84,6 +100,8 @@ public:
     }
 
     void visitIfT(const IfNode& node) override {
+        printAnnotations(node);
+        
         indent();
         std::string isConst = node.isConditionConstant ? (" [CONST: " + std::to_string(node.conditionValue) + "]") : " [NON-CONST]";
         output_ << "IfStmt" << isConst << "\n";
@@ -106,6 +124,8 @@ public:
     }
 
     void visitWhileT(const WhileNode& node) override {
+        printAnnotations(node);
+
         indent();
         std::string isConst = node.isConditionConstant ? (" [CONST: " + std::to_string(node.conditionValue) + "]") : " [NON-CONST]";
         output_ << "WhileLoop" << isConst << "\n";
@@ -119,6 +139,8 @@ public:
     }
 
     void visitScopeT(const ScopeNode& node) override {
+        printAnnotations(node);
+
         indent();
         output_ << "Scope {\n";
         
@@ -133,4 +155,5 @@ public:
 
         output_ << "\n";
     }
+
 };

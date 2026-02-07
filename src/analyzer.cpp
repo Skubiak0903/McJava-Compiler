@@ -88,12 +88,21 @@ private:
         //if (variables_.count(varName) > 0) {
         //}
 
+        bool isExternal = false; // if is external then ignore value of this declaration for now
+        // let rezultvar be analyzed just to get dataType for now, but this needs to be changed later
+        
+        for (const auto& anno : node.annotations) {
+            if (anno.name == "External" || anno.name == "Global") {
+                isExternal = true;
+            }
+        }
+
         // set all data to be sure everything is correct
         VarInfo varData = { 
             .name           = varName,
             .dataType       = resultVar->dataType,
             
-            .isConstant     = resultVar->isConstant,
+            .isConstant     = resultVar->isConstant && !isExternal,
             .constValue     = resultVar->constValue, // we can just set without checking if isConstant is true
             
             .storageType    = VarStorageType::SCOREBOARD, // for now we only support int so it will be fine with scoreboard
