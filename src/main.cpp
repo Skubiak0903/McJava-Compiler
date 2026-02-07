@@ -178,7 +178,7 @@ int main(int argc, char* argv[])
         std::ofstream file(filename + "-parse-tree.dump", std::ios::out);
         if (file.is_open()) {
             DebugGenerator debugGen(file);
-            ast->visit(debugGen);
+            ast->accept(debugGen);
             file.close();
         }
     }
@@ -187,14 +187,14 @@ int main(int argc, char* argv[])
     clock_t tEndPar = clock();
 
     Analyzer analyzer(options);
-    ast->visit(analyzer);
+    ast->accept(analyzer);
     const auto variables = analyzer.getVariables();
 
     if (options.dumpAnalyzerTree) {
         std::ofstream file(filename + "-analyzer-tree.dump", std::ios::out);
         if (file.is_open()) {
             DebugGenerator debugGen(file);
-            ast->visit(debugGen);
+            ast->accept(debugGen);
             file.close();
         }
     }
@@ -231,7 +231,7 @@ int main(int argc, char* argv[])
         fs::path path(filename);
         if (!options.silent) std::cout << "Path: " << path << "\n";
         FunctionGenerator funcGen(path, options, variables);
-        ast->visit(funcGen);
+        ast->accept(funcGen);
     }
     
     // end of generation time measurement

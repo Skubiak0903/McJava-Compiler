@@ -16,7 +16,7 @@ struct Scope {
 };
 
 
-class FunctionGenerator : public ASTVisitor<std::shared_ptr<VarInfo>> {
+class FunctionGenerator : public ASTVisitor {
 private:
     const fs::path& path_;
     const Options& options_;
@@ -70,30 +70,32 @@ private:
         scopes_.pop_back();
     }
 
+    inline std::shared_ptr<VarInfo> visit(ASTNode& node) { return node.visit<std::shared_ptr<VarInfo>>(*this); }
+
 public:
     FunctionGenerator(fs::path& path, Options& options, std::unordered_map<std::string, std::shared_ptr<VarInfo>> variables) 
         : path_(path), options_(options), variables_(std::move(variables)) {}
 
 
-    std::shared_ptr<VarInfo> visitCommandT(const CommandNode& node) override {
+    ASTReturn visitCommand(const CommandNode& node) override {
         generateCommand(node);
         return nullptr;
     }
 
-    std::shared_ptr<VarInfo> visitVarDeclT(const VarDeclNode& node) override {
+    ASTReturn visitVarDecl(const VarDeclNode& node) override {
         generateVarDecl(node);
         return nullptr;
     }
 
-    std::shared_ptr<VarInfo> visitExprT(const ExprNode& node) override {
+    ASTReturn visitExpr(const ExprNode& node) override {
         return generateExpr(node); 
     }
 
-    std::shared_ptr<VarInfo> visitBinaryOpT(const BinaryOpNode& node) override {
+    ASTReturn visitBinaryOp(const BinaryOpNode& node) override {
         return generateBinaryOp(node);
     }
 
-    std::shared_ptr<VarInfo> visitIfT(const IfNode& node) override {
+    ASTReturn visitIf(const IfNode& node) override {
         if (node.elseBranch) {
             generateIfWithElse(node);
         } else {
@@ -102,12 +104,12 @@ public:
         return nullptr;
     }
 
-    std::shared_ptr<VarInfo> visitWhileT(const WhileNode& node) override {
+    ASTReturn visitWhile(const WhileNode& node) override {
         generateWhile(node);
         return nullptr;
     }
 
-    std::shared_ptr<VarInfo> visitScopeT(const ScopeNode& node) override {
+    ASTReturn visitScope(const ScopeNode& node) override {
         generateScope(node);
         return nullptr;
     }
@@ -142,8 +144,8 @@ private:
                 continue;
             }
 
-            VarInfo tempVar = *arg->visit(*this);
-            ss << "{\"score\":{\"name\":\"" << tempVar.storagePath << "\",\"objective\":\"" << tempVar.storageIdent << "\"}},";
+            auto tempVar = visit(*arg);
+            ss << "{\"score\":{\"name\":\"" << tempVar->storagePath << "\",\"objective\":\"" << tempVar->storageIdent << "\"}},";
         }
         ss << "]";
 
@@ -200,7 +202,7 @@ private:
             if (!node.varInfo->constValue.empty()) {
                 *output << "execute if score %e " << node.varInfo->storageIdent << " matches 0 run scoreboard players set " << varName << " " << node.varInfo->storageIdent << " " << node.varInfo->constValue << "\n";
             } else {
-                VarInfo tempVar = *node.value->visit(*this);
+                VarInfo tempVar = *visit(*node.value);
 
                 *output << "execute if score %e " << node.varInfo->storageIdent << " matches 0 run scoreboard players operation " << varName << " " << node.varInfo->storageIdent << " = " << tempVar.storagePath << " " << tempVar.storageIdent << "\n";
             }
@@ -214,7 +216,7 @@ private:
             *output << "#Debug: Constant var\n";
             *output << "scoreboard players set " << varName << " " << node.varInfo->storageIdent << " " << node.varInfo->constValue << "\n";
         } else {
-            VarInfo tempVar = *node.value->visit(*this);
+            VarInfo tempVar = *visit(*node.value);
 
             *output << "#Debug: Dynamic var \n";
             *output << "scoreboard players operation " << varName << " " << node.varInfo->storageIdent << " = " << tempVar.storagePath << " " << tempVar.storageIdent << "\n";
@@ -306,8 +308,8 @@ private:
         auto output = getCurrentOutput();
         
         // we can generate these 2 nodes because there is at least 1 variable -> analyzer combined all 2 constants binary operators
-        VarInfo leftVar  = *node.left ->visit(*this);
-        VarInfo rightVar = *node.right->visit(*this);
+        VarInfo leftVar  = *visit(*node.left);
+        VarInfo rightVar = *visit(*node.right);
 
         // we dont want to change anything in variables -> just generate it
         //std::string tempVarName = getTempVarName();
@@ -538,7 +540,7 @@ private:
         }
 
         /// DYNAMIC :
-        VarInfo conditionVar = *node.condition->visit(*this);      
+        VarInfo conditionVar = *visit(*node.condition);      
 
         // then branch
         std::string thenComment = "# Then Body\n";
@@ -575,11 +577,11 @@ private:
         auto scopeNode = dynamic_cast<ScopeNode*>(body);
         if (!scopeNode) {
             // single statement
-            body->visit(*this);
+            visit(*body);
         } else {
             // body is a scope
             for (const auto& stmt : scopeNode->statements) {
-                stmt->visit(*this);
+                visit(*stmt);
             }
         }
     }
@@ -618,7 +620,7 @@ private:
         // first check to enter the loop
         *mainOutput << "# Check condition to enter the 'then' function\n";
 
-        VarInfo conditionVar = *node.condition->visit(*this);        
+        VarInfo conditionVar = *visit(*node.condition);        
         *mainOutput << "execute if score " << conditionVar.storagePath << " " << conditionVar.storageIdent << " matches 1 run function " << getFunctionNameSpace() << thenScopeName << "\n";
     
     }
@@ -659,7 +661,7 @@ private:
             }
         } else {
             // generate condition and then check
-            VarInfo conditionVar = *node.condition->visit(*this);        
+            VarInfo conditionVar = *visit(*node.condition);        
             return "execute if score " + conditionVar.storagePath + " " + conditionVar.storageIdent + " matches 1 run function " + getFunctionNameSpace() + scopeName + "\n";
         }
         return "";
@@ -672,7 +674,7 @@ private:
         enterScope();
                 
         for (const auto& stmt : node.statements) {
-            stmt->visit(*this);
+            visit(*stmt);
         }
         
         exitScope();

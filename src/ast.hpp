@@ -66,26 +66,17 @@ inline std::string dataTypeToString(DataType type) {
 class ASTNode {
 public:
     virtual ~ASTNode() = default;
+    virtual ASTReturn accept(ASTVisitor& visitor) const = 0;
 
     template<typename T>
-    T visit(ASTVisitor<T>& visitor) const {
-        return std::any_cast<T>(accept(visitor));
+    T visit(ASTVisitor& visitor) const {
+        return std::get<T>(this->accept(visitor));
     }
 
-    // Overload for void-result visitors so we don't attempt std::any_cast<void>.
-    void visit(ASTVisitor<void>& visitor) const {
-        accept(visitor);
-    }
-
-    std::vector<Annotation> annotations = {};
-
-    // --- Semantic Data (Adnotations) ---
+    
+    // --- Semantic Data ---
     mutable bool isAnalyzed = false;
-    //mutable DataType dataType = DataType::UNKNOWN;
-
-protected:
-    // Nodes implement this to perform dynamic dispatch; returns a type-erased result.
-    virtual std::any accept(ASTVisitorBase& visitor) const = 0;
+    std::vector<Annotation> annotations = {};
 };
 
 
@@ -100,7 +91,7 @@ public:
     CommandNode(Token cmd, std::vector<std::unique_ptr<ASTNode>> args = {})
         : command(cmd), args(std::move(args)) {}
 
-    std::any accept(ASTVisitorBase& visitor) const override {
+    ASTReturn accept(ASTVisitor& visitor) const override {
         return visitor.visitCommand(*this);
     }
 };
@@ -115,8 +106,8 @@ public:
     
     VarDeclNode(Token name, std::unique_ptr<ASTNode> value)
         : name(name), value(std::move(value)) {}
-    
-    std::any accept(ASTVisitorBase& visitor) const override {
+
+    ASTReturn accept(ASTVisitor& visitor) const override {
         return visitor.visitVarDecl(*this);
     }
 };
@@ -132,7 +123,7 @@ public:
     ExprNode(Token token)
         : token(token) {}
     
-    std::any accept(ASTVisitorBase& visitor) const override {
+    ASTReturn accept(ASTVisitor& visitor) const override {
         return visitor.visitExpr(*this);
     }
 };
@@ -149,7 +140,7 @@ public:
     BinaryOpNode(Token op, std::unique_ptr<ASTNode> left, std::unique_ptr<ASTNode> right)
         : op(op), left(std::move(left)), right(std::move(right)) {}
     
-    std::any accept(ASTVisitorBase& visitor) const override {
+    ASTReturn accept(ASTVisitor& visitor) const override {
         return visitor.visitBinaryOp(*this);
     }
 };
@@ -167,7 +158,7 @@ public:
     IfNode(std::unique_ptr<ASTNode> condition, std::unique_ptr<ASTNode> thenBranch, std::unique_ptr<ASTNode> elseBranch)
         : condition(std::move(condition)), thenBranch(std::move(thenBranch)), elseBranch(std::move(elseBranch)) {}
     
-    std::any accept(ASTVisitorBase& visitor) const override {
+    ASTReturn accept(ASTVisitor& visitor) const override {
         return visitor.visitIf(*this);
     }
 };
@@ -184,7 +175,7 @@ public:
     WhileNode(std::unique_ptr<ASTNode> condition, std::unique_ptr<ASTNode> body)
         : condition(std::move(condition)), body(std::move(body)) {}
     
-    std::any accept(ASTVisitorBase& visitor) const override {
+    ASTReturn accept(ASTVisitor& visitor) const override {
         return visitor.visitWhile(*this);
     }
 };
@@ -197,7 +188,7 @@ public:
     ScopeNode(std::vector<std::unique_ptr<ASTNode>> statements = {})
         : statements(std::move(statements)) {}
     
-    std::any accept(ASTVisitorBase& visitor) const override {
+    ASTReturn accept(ASTVisitor& visitor) const override {
         return visitor.visitScope(*this);
     }
 };

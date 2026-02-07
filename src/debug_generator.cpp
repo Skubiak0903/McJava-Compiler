@@ -1,7 +1,7 @@
 // debug_generator.cpp
 #include "./ast.hpp"
 
-class DebugGenerator : public ASTVisitor<void> {
+class DebugGenerator : public ASTVisitor {
 private:
     std::ostream& output_;
 
@@ -12,6 +12,8 @@ private:
     }
 
     void printAnnotations(const ASTNode& node) {
+        if (node.annotations.empty()) return;
+        
         indent();
         for (Annotation ann : node.annotations) {
             output_ << "@" << ann.name << ", ";
@@ -19,10 +21,13 @@ private:
         output_ << "\n";
     }
 
+    inline ASTReturn done() { return std::monostate{}; }
+    inline void visit(ASTNode& node) { node.visit<std::monostate>(*this); }
+
 public:
     DebugGenerator(std::ostream& out) : output_(out) {}
 
-    void visitCommandT(const CommandNode& node) override {
+    ASTReturn visitCommand(const CommandNode& node) override {
         printAnnotations(node);
 
         indent();
@@ -30,14 +35,15 @@ public:
 
         indent_++;
         for (const auto& arg : node.args) {
-            arg->visit(*this);
+            visit(*arg);
         }
         indent_--;
 
         output_ << "\n";
+        return done();
     }
     
-    void visitVarDeclT(const VarDeclNode& node) override {
+    ASTReturn visitVarDecl(const VarDeclNode& node) override {
         printAnnotations(node);
 
         indent();
@@ -53,13 +59,14 @@ public:
         }
 
         indent_++;
-        node.value->visit(*this);
+        visit(*node.value);
         indent_--; 
 
         output_ << "\n";
+        return done();
     }
 
-    void visitExprT(const ExprNode& node) override {
+    ASTReturn visitExpr(const ExprNode& node) override {
         printAnnotations(node);
 
         indent();
@@ -75,9 +82,10 @@ public:
                 << " [" << tokenTypeToString(node.token.type) << "], "
                 << "\n";
         }
+        return done();
     }
 
-    void visitBinaryOpT(const BinaryOpNode& node) override {
+    ASTReturn visitBinaryOp(const BinaryOpNode& node) override {
         printAnnotations(node);
 
         indent();
@@ -94,12 +102,14 @@ public:
         }
 
         indent_++;
-        node.left->visit(*this);
-        node.right->visit(*this);
+        visit(*node.left);
+        visit(*node.right);
         indent_--; 
+
+        return done();
     }
 
-    void visitIfT(const IfNode& node) override {
+    ASTReturn visitIf(const IfNode& node) override {
         printAnnotations(node);
         
         indent();
@@ -107,8 +117,8 @@ public:
         output_ << "IfStmt" << isConst << "\n";
 
         indent_++;
-        node.condition->visit(*this);
-        node.thenBranch->visit(*this);
+        visit(*node.condition);
+        visit(*node.thenBranch);
         indent_--;
 
         if (node.elseBranch) {
@@ -116,14 +126,15 @@ public:
             output_ << "else:\n";
 
             indent_++;
-            node.elseBranch->visit(*this);
+            visit(*node.elseBranch);
             indent_--;
         }
 
         output_ << "\n";
+        return done();
     }
 
-    void visitWhileT(const WhileNode& node) override {
+    ASTReturn visitWhile(const WhileNode& node) override {
         printAnnotations(node);
 
         indent();
@@ -131,14 +142,15 @@ public:
         output_ << "WhileLoop" << isConst << "\n";
 
         indent_++;
-        node.condition->visit(*this);
-        node.body->visit(*this);
+        visit(*node.condition);
+        visit(*node.body);
         indent_--;
 
         output_ << "\n";
+        return done();
     }
 
-    void visitScopeT(const ScopeNode& node) override {
+    ASTReturn visitScope(const ScopeNode& node) override {
         printAnnotations(node);
 
         indent();
@@ -146,7 +158,7 @@ public:
         
         indent_++;
         for (const auto& stmt : node.statements) {
-            stmt->visit(*this);
+            visit(*stmt);
         }
         indent_--;
 
@@ -154,6 +166,7 @@ public:
         output_ << "}\n";
 
         output_ << "\n";
+        return done();
     }
 
 };

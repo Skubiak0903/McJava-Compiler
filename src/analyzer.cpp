@@ -3,7 +3,7 @@
 #include "./ast.hpp"
 #include "./options.hpp"
 
-class Analyzer : public ASTVisitor<std::shared_ptr<VarInfo>> {
+class Analyzer : public ASTVisitor {
 private:
     std::unordered_map<std::string, std::shared_ptr<VarInfo>> variables_;
     size_t tempVarCount_ = 0;
@@ -20,40 +20,42 @@ private:
         return "%" + std::to_string(tempVarCount_++);
     }
 
+    inline std::shared_ptr<VarInfo> visit(ASTNode& node) { return node.visit<std::shared_ptr<VarInfo>>(*this); }
+
 public:
     Analyzer(Options& options) : 
         options_(options) {}
 
 
-    std::shared_ptr<VarInfo> visitCommandT(const CommandNode& node) override {
+    ASTReturn visitCommand(const CommandNode& node) override {
         analyzeCommand(node);
         return nullptr;
     }
 
-    std::shared_ptr<VarInfo> visitVarDeclT(const VarDeclNode& node) override {
+    ASTReturn visitVarDecl(const VarDeclNode& node) override {
         analyzeVarDecl(node);
         return nullptr;
     }
 
-    std::shared_ptr<VarInfo> visitExprT(const ExprNode& node) override {
+    ASTReturn visitExpr(const ExprNode& node) override {
         return analyzeExpr(node); 
     }
 
-    std::shared_ptr<VarInfo> visitBinaryOpT(const BinaryOpNode& node) override {
+    ASTReturn visitBinaryOp(const BinaryOpNode& node) override {
         return analyzeBinaryOp(node);
     }
 
-    std::shared_ptr<VarInfo> visitIfT(const IfNode& node) override {
+    ASTReturn visitIf(const IfNode& node) override {
         analyzeIf(node);
         return nullptr;
     }
 
-    std::shared_ptr<VarInfo> visitWhileT(const WhileNode& node) override {
+    ASTReturn visitWhile(const WhileNode& node) override {
         analyzeWhile(node);
         return nullptr;
     }
 
-    std::shared_ptr<VarInfo> visitScopeT(const ScopeNode& node) override {
+    ASTReturn visitScope(const ScopeNode& node) override {
         analyzeScope(node);
         return nullptr;
     }
@@ -66,15 +68,16 @@ public:
 private: 
     void analyzeCommand(const CommandNode& node) {
         for (const auto& arg : node.args) {
-            arg->visit(*this); // Analyze all nodes
+            visit(*arg); // Analyze all expressions
         }
 
         node.isAnalyzed = true;
     }
 
+
     void analyzeVarDecl(const VarDeclNode& node) {
         // analyze value first
-        auto resultVar = node.value->visit(*this);
+        auto resultVar = visit(*node.value);
         std::string varName = node.name.value.value();
         
         if (varName.empty()) error("VarDecl Error: Variable name is empty!");
@@ -120,6 +123,7 @@ private:
         node.varInfo = varInfo;
         node.isAnalyzed = true;
     }
+
 
     std::shared_ptr<VarInfo> analyzeExpr(const ExprNode& node) {
         std::string tokValue = node.token.value.value();
@@ -205,8 +209,8 @@ private:
 
     std::shared_ptr<VarInfo> analyzeBinaryOp(const BinaryOpNode& node){
         // Implementation of binary operation analysis
-        auto leftVar = node.left->visit(*this);
-        auto rightVar = node.right->visit(*this);
+        auto leftVar = visit(*node.left);
+        auto rightVar = visit(*node.right);
 
         if (!leftVar || !rightVar) {
             error("Failed to analyze binary operation");
@@ -320,16 +324,16 @@ private:
     }
 
     void analyzeIf(const IfNode& node) {
-        VarInfo varInfo = *node.condition->visit(*this);
-        node.thenBranch->visit(*this);
-        if (node.elseBranch) node.elseBranch->visit(*this);
+        auto varInfo = visit(*node.condition);
+        visit(*node.thenBranch);
+        if (node.elseBranch) visit(*node.elseBranch);
 
-        if (varInfo.isConstant && !(varInfo.constValue == "0" || varInfo.constValue == "1")) {
+        if (varInfo->isConstant && !(varInfo->constValue == "0" || varInfo->constValue == "1")) {
             error("If condition must have expression that returns true or false");
         }
 
-        node.isConditionConstant = varInfo.isConstant;
-        node.conditionValue      = (varInfo.constValue == "1"); // 1 -> true, 0 -> false
+        node.isConditionConstant = varInfo->isConstant;
+        node.conditionValue      = (varInfo->constValue == "1"); // 1 -> true, 0 -> false
 
         node.isAnalyzed = true;
     }
@@ -339,22 +343,22 @@ private:
         
         // we need to first invalidate variables that were changed in the loop body
         // and then we can analyze condition and body with correct information about which variables are constant
-        VarInfo varInfo = *node.condition->visit(*this);
-        node.body->visit(*this);
+        auto varInfo = visit(*node.condition);
+        visit(*node.body);
 
-        if (varInfo.isConstant && !(varInfo.constValue == "0" || varInfo.constValue == "1")) {
+        if (varInfo->isConstant && !(varInfo->constValue == "0" || varInfo->constValue == "1")) {
             error("While condition must have expression that returns true or false");
         } 
 
-        node.isConditionConstant = varInfo.isConstant;
-        node.conditionValue      = (varInfo.constValue == "1"); // 1 -> true, 0 -> false
+        node.isConditionConstant = varInfo->isConstant;
+        node.conditionValue      = (varInfo->constValue == "1"); // 1 -> true, 0 -> false
         
         node.isAnalyzed = true;
     }
 
     void analyzeScope(const ScopeNode& node) {
         for (const auto& arg : node.statements) {
-            arg->visit(*this); // Analyze all nodes
+            visit(*arg); // Analyze all nodes
         }
         node.isAnalyzed = true;
     }
