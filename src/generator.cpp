@@ -560,8 +560,24 @@ private:
 
         // check if the branch will even fire
         // NOTE: if we would want to implement debug mode or debbuger we need to let this pass so the loop body will be generated
-        if (node.isConditionConstant && node.conditionValue == false) return;
         
+        // STATIC :
+        if (node.isConditionConstant) {
+            if (node.conditionValue == false) return;
+
+            ASTNode* branch     = node.thenBranch.get();
+            std::string comment = "# Static Then Body\n";
+            
+            auto mainOutput = getCurrentOutput();
+            *mainOutput << comment;
+            appendBranch(branch);
+    
+            return;
+        } 
+        
+
+        // DYNAMIC :
+
         // then branch
         std::string comment = "# Then Body\n";
         std::string thenScopeName = generateBranch(node.thenBranch.get(), comment);
