@@ -1,13 +1,13 @@
-// generator.cpp
-#include <unordered_map>
+// backend/generator.cpp
+#include "./generator.hpp"
+
 #include <set>
-#include <filesystem>
-#include <optional>
+#include <iostream>
+#include <fstream>
 
-#include "./ast.hpp"
-#include "./options.hpp"
+#include "./../core/ast.hpp"
+#include "./../core/options.hpp"
 
-namespace fs = std::filesystem;
 
 struct Scope {
     std::string name;
@@ -15,8 +15,7 @@ struct Scope {
     std::unique_ptr<std::stringstream> output;
 };
 
-
-class FunctionGenerator : public ASTVisitor {
+class FunctionGenerator::Impl : public ASTVisitor {
 private:
     const fs::path& path_;
     const Options& options_;
@@ -73,9 +72,13 @@ private:
     inline std::shared_ptr<VarInfo> visit(ASTNode& node) { return node.visit<std::shared_ptr<VarInfo>>(*this); }
 
 public:
-    FunctionGenerator(fs::path& path, Options& options, std::unordered_map<std::string, std::shared_ptr<VarInfo>> variables) 
+
+    Impl(fs::path& path, Options& options, std::unordered_map<std::string, std::shared_ptr<VarInfo>> variables) 
         : path_(path), options_(options), variables_(std::move(variables)) {}
 
+    void generate(ASTNode& node) {
+        visit(node);
+    }
 
     ASTReturn visitCommand(const CommandNode& node) override {
         generateCommand(node);
@@ -113,7 +116,6 @@ public:
         generateScope(node);
         return nullptr;
     }
-
 
 
 private:
@@ -705,3 +707,13 @@ private:
     }
 
 };
+
+// ========== WRAPPER ==========
+FunctionGenerator::FunctionGenerator(fs::path& path, Options& options, std::unordered_map<std::string, std::shared_ptr<VarInfo>> variables)
+    : pImpl(std::make_unique<Impl>(path, options, variables)) {}
+
+FunctionGenerator::~FunctionGenerator() = default; // Needed for unique_ptr<Impl>
+
+void FunctionGenerator::generate(ASTNode& node) {
+    pImpl->generate(node);
+}

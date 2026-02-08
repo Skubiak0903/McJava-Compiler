@@ -12,6 +12,7 @@ using json = nlohmann::json;
 class SimplifiedCommandRegistry {
 public:
     SimplifiedCommandRegistry() = default;
+    ~SimplifiedCommandRegistry() = default;
 
     // Load data.json (the commands tree)
     bool loadFromFile(const std::string& path, std::string *err = nullptr) {

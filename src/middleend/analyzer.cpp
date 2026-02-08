@@ -1,31 +1,20 @@
+// middleend/analyzer.cpp
+#include "./analyzer.hpp"
+
 #include <unordered_map>
+#include <iostream>
 
-#include "./ast.hpp"
-#include "./options.hpp"
+#include "./../core/ast.hpp"
+#include "./../core/options.hpp"
 
-class Analyzer : public ASTVisitor {
-private:
-    std::unordered_map<std::string, std::shared_ptr<VarInfo>> variables_;
-    size_t tempVarCount_ = 0;
-    const Options& options_;
-
-
-    std::string getCurrentScoreboard() const {
-        // std::string scopeName = getCurrentScope().name;
-        std::string scopeName = "scope_0";
-        return "mcjava_sb_" + scopeName;
-    }
-
-    std::string getTempVarName() {
-        return "%" + std::to_string(tempVarCount_++);
-    }
-
-    inline std::shared_ptr<VarInfo> visit(ASTNode& node) { return node.visit<std::shared_ptr<VarInfo>>(*this); }
-
+class Analyzer::Impl : public ASTVisitor {
 public:
-    Analyzer(Options& options) : 
+    Impl(Options& options) : 
         options_(options) {}
 
+    void analyze(ASTNode& node) {
+        node.accept(*this);
+    }
 
     ASTReturn visitCommand(const CommandNode& node) override {
         analyzeCommand(node);
@@ -64,9 +53,25 @@ public:
         return variables_;
     }
 
+private:
+    std::unordered_map<std::string, std::shared_ptr<VarInfo>> variables_;
+    size_t tempVarCount_ = 0;
+    const Options& options_;
 
-private: 
-    void analyzeCommand(const CommandNode& node) {
+
+    std::string getCurrentScoreboard() const {
+        // std::string scopeName = getCurrentScope().name;
+        std::string scopeName = "scope_0";
+        return "mcjava_sb_" + scopeName;
+    }
+
+    std::string getTempVarName() {
+        return "%" + std::to_string(tempVarCount_++);
+    }
+
+    inline std::shared_ptr<VarInfo> visit(ASTNode& node) { return node.visit<std::shared_ptr<VarInfo>>(*this); }
+
+void analyzeCommand(const CommandNode& node) {
         for (const auto& arg : node.args) {
             visit(*arg); // Analyze all expressions
         }
@@ -351,7 +356,7 @@ private:
         } 
 
         node.isConditionConstant = varInfo->isConstant;
-        node.conditionValue      = (varInfo->constValue == "1"); // 1 -> true, 0 -> false
+        node.conditionValue      = varInfo->isConstant && (varInfo->constValue == "1");
         
         node.isAnalyzed = true;
     }
@@ -387,12 +392,12 @@ private:
             return DataType::UNKNOWN;
         }
         
-        // Dla operatorów porównania
+        // Comparison operators -> always bool
         if (op == TokenType::EQUALS_EQUALS || op == TokenType::NOT_EQUALS ||
             op == TokenType::LESS || op == TokenType::GREATER ||
             op == TokenType::LESS_EQUAL || op == TokenType::GREATER_EQUAL) {
             
-            return DataType::BOOL;  // zawsze bool
+            return DataType::BOOL;
         }
         
         return DataType::UNKNOWN;
@@ -407,7 +412,7 @@ private:
             //std::cout << "Analyzer: Variable " << decl->name.value.value() << " is now non-constant\n";
             invalidateVarsInNode(decl->value.get());
         }
-        if (auto expr = dynamic_cast<ExprNode*>(node)) {
+        else if (auto expr = dynamic_cast<ExprNode*>(node)) {
             // its double check is the TokenType is IDENT, another check is in analyzeExpr
             if (expr->token.type == TokenType::IDENT) {
                 expr->forceDynamic = true;
@@ -429,3 +434,18 @@ private:
         exit(EXIT_FAILURE);
     }
 };
+
+
+// ========== WRAPPER ==========
+Analyzer::Analyzer(Options& options)
+    : pImpl(std::make_unique<Impl>(options)) {}
+
+Analyzer::~Analyzer() = default; // Needed for unique_ptr<Impl>
+
+std::unordered_map<std::string, std::shared_ptr<VarInfo>> Analyzer::getVariables() const {
+    return pImpl->getVariables();
+}
+
+void Analyzer::analyze(ASTNode& node) {
+    pImpl->analyze(node);
+}

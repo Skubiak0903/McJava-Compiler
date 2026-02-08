@@ -1,15 +1,15 @@
-#include <memory>
-#include <vector>
+// frontend/parser.cpp
+#include "./parser.hpp"
 
-#include "./tokenization.hpp"
 #include "./registries/SimplifiedCommandRegistry.hpp"
-#include "./ast.hpp"
+#include "./core/token.hpp"
+#include "./core/ast.hpp"
 
-class Parser {
-    public:
-    explicit Parser(std::vector<Token> tokens, SimplifiedCommandRegistry& reg)
+class Parser::Impl {
+public:
+    Impl(std::vector<Token> tokens, SimplifiedCommandRegistry& reg)
     : tokens_(std::move(tokens)), reg_(reg), pos_(0) {}
-    
+
     std::unique_ptr<ASTNode> parse() {
         auto scope = std::make_unique<ScopeNode>();
         
@@ -34,18 +34,18 @@ class Parser {
         
     }
 
-private:
+private: 
     std::vector<Token> tokens_;
     SimplifiedCommandRegistry& reg_;
     size_t pos_;
     
     std::vector<Annotation> pendingAnnotations;
-    
+
 
     // ===== HELPER METHODS =====   
 
     void skipNewLines() {
-        while(hasTokens() && (canSkip(peek().type) || peek().type == TokenType::END_OF_FILE)) consume();
+        while(hasTokens() && canSkip(peek().type)) consume();
     }
 
     bool canSkip(TokenType type) const {
@@ -61,7 +61,8 @@ private:
         type == TokenType::NOT_EQUALS;
     }
 
-    
+
+
 
     // ===== PARSE LOGIC =====
 
@@ -107,7 +108,7 @@ private:
         }
         
 
-        // append adnotations
+        // append annotations
         if (node) {
             if (!pendingAnnotations.empty()) {
                 node->annotations = pendingAnnotations;
@@ -391,3 +392,13 @@ private:
         }
     }
 };
+
+// ========== WRAPPER ==========
+Parser::Parser(std::vector<Token> tokens, SimplifiedCommandRegistry& reg)
+    : pImpl(std::make_unique<Impl>(tokens, reg)) {}
+
+Parser::~Parser() = default;  // Needed for unique_ptr<Impl>
+
+std::unique_ptr<ASTNode> Parser::parse() {
+    return pImpl->parse();
+}

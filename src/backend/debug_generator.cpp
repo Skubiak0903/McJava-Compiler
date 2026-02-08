@@ -1,7 +1,9 @@
-// debug_generator.cpp
-#include "./ast.hpp"
+// backend/debug_generator.cpp
+#include "./debug_generator.hpp"
 
-class DebugGenerator : public ASTVisitor {
+#include "./../core/ast.hpp"
+
+class DebugGenerator::Impl : public ASTVisitor {
 private:
     std::ostream& output_;
 
@@ -22,10 +24,14 @@ private:
     }
 
     inline ASTReturn done() { return std::monostate{}; }
-    inline void visit(ASTNode& node) { node.visit<std::monostate>(*this); }
+    inline void visit(ASTNode& node) { node.accept(*this); }
 
 public:
-    DebugGenerator(std::ostream& out) : output_(out) {}
+    Impl(std::ostream& out) : output_(out) {}
+
+    void generate(ASTNode& node) {
+        node.accept(*this);
+    }
 
     ASTReturn visitCommand(const CommandNode& node) override {
         printAnnotations(node);
@@ -170,3 +176,13 @@ public:
     }
 
 };
+
+// ========== WRAPPER ==========
+DebugGenerator::DebugGenerator(std::ostream& out)
+    : pImpl(std::make_unique<Impl>(out)) {}
+
+DebugGenerator::~DebugGenerator() = default; // Needed for unique_ptr<Impl>
+
+void DebugGenerator::generate(ASTNode& node) {
+    pImpl->generate(node);
+}

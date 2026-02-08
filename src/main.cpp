@@ -7,14 +7,16 @@
 #include <filesystem>
 #include <chrono>
 
-#include "./tokenization.hpp"
-#include "./debug_generator.cpp"
-#include "./generator.cpp"
-#include "./parser.cpp"
-#include "./analyzer.cpp"
+#include "./frontend/tokenizer.hpp"
+#include "./frontend/parser.hpp"
+#include "./middleend/analyzer.hpp"
+#include "./backend/debug_generator.hpp"
+#include "./backend/generator.hpp"
 
 #include "./registries/SimplifiedCommandRegistry.hpp"
-#include "./options.hpp"
+#include "./core/options.hpp"
+#include "./core/token.hpp"
+#include "./core/ast.hpp"
 
 namespace fs = std::filesystem;
 
@@ -167,7 +169,7 @@ int main(int argc, char* argv[])
 
     // Parsing tokens
     Parser parser(std::move(tokens), reg);
-    auto ast = parser.parse(); // std::vector<ASTNode>
+    auto ast = parser.parse(); // std::unique_ptr<ASTNode>
     
     if (!ast) {
         std::cerr << "Parse failed: no AST generated" << std::endl;
@@ -178,7 +180,7 @@ int main(int argc, char* argv[])
         std::ofstream file(filename + "-parse-tree.dump", std::ios::out);
         if (file.is_open()) {
             DebugGenerator debugGen(file);
-            ast->accept(debugGen);
+            debugGen.generate(*ast);
             file.close();
         }
     }
@@ -187,14 +189,14 @@ int main(int argc, char* argv[])
     clock_t tEndPar = clock();
 
     Analyzer analyzer(options);
-    ast->accept(analyzer);
+    analyzer.analyze(*ast);
     const auto variables = analyzer.getVariables();
 
     if (options.dumpAnalyzerTree) {
         std::ofstream file(filename + "-analyzer-tree.dump", std::ios::out);
         if (file.is_open()) {
             DebugGenerator debugGen(file);
-            ast->accept(debugGen);
+            debugGen.generate(*ast);
             file.close();
         }
     }
@@ -231,7 +233,7 @@ int main(int argc, char* argv[])
         fs::path path(filename);
         if (!options.silent) std::cout << "Path: " << path << "\n";
         FunctionGenerator funcGen(path, options, variables);
-        ast->accept(funcGen);
+        funcGen.generate(*ast);
     }
     
     // end of generation time measurement

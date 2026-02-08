@@ -1,5 +1,5 @@
-#ifndef OPTIONS_HPP
-#define OPTIONS_HPP
+// core/options.hpp
+#pragma once
 
 #include <string>
 
@@ -26,5 +26,3 @@ struct Options {
     std::string dpPrefix   = "mcjava";
     std::string dpPath     = "";
 };
-
-#endif

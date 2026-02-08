@@ -1,41 +1,14 @@
-// tokenization.hpp
-#pragma once
+// frontend/tokenizer.cpp
+#include "./tokenizer.hpp"
 
 #include <iostream>
-#include <string>
-#include <optional>
-#include <vector>
-#include <algorithm>
 #include <unordered_map>
+#include <cctype>
 
-#include "./registries/SimplifiedCommandRegistry.hpp"
+#include "./../registries/SimplifiedCommandRegistry.hpp"
+#include "./../core/token.hpp"
 
-enum class TokenType {
-    // Literals
-    INT_LIT, FLOAT_LIT, STRING_LIT,
-    
-    // Operators
-    PLUS, MINUS, MULTIPLY, DIVIDE,
-    EQUALS, EQUALS_EQUALS, NOT_EQUALS,
-    LESS, GREATER, LESS_EQUAL, GREATER_EQUAL,
-    
-    // Brackets
-    OPEN_PAREN, CLOSE_PAREN,
-    OPEN_BRACE, CLOSE_BRACE,
-    OPEN_BRACKET, CLOSE_BRACKET,
-    
-    // Interpunction
-    SEMI_COLON, COMMA, DOT,
-    
-    // Keywords
-    WHILE, FOR, IF, ELSE, RETURN, TRUE, FALSE,
-    
-    // Dynamic
-    IDENT, CMD_KEY, ANNOTATION,
-    
-    // Special
-    NEW_LINE, END_OF_FILE,
-};
+
 
 const inline std::unordered_map<std::string, TokenType> KEYWORDS = {
     {"while", TokenType::WHILE},
@@ -77,74 +50,36 @@ const inline std::unordered_map<std::string, TokenType> DOUBLE_CHARS = {
 };
 
 
+// Tokenizer implementation from ./tokenizer.hpp
+class Tokenizer::Impl {
+private:
+    size_t line = 1, col = 0;
+    std::string m_src;
+    SimplifiedCommandRegistry& m_reg;
+    size_t m_idx = 0;
 
-inline std::string tokenTypeToString(TokenType type) {
-    switch(type) {
-        // Literals
-        case TokenType::INT_LIT     : return "Int";
-        case TokenType::FLOAT_LIT   : return "Float"; 
-        case TokenType::STRING_LIT  : return "String";
-        
-        // Operators
-        case TokenType::PLUS            : return "PLUS (+)";
-        case TokenType::MINUS           : return "MINUS (-)";
-        case TokenType::MULTIPLY        : return "MULTIPLY (*)";
-        case TokenType::DIVIDE          : return "DIVIDE (/)";
-        case TokenType::EQUALS          : return "EQUALS (=)";
-        case TokenType::EQUALS_EQUALS   : return "EQUAL (==)";
-        case TokenType::NOT_EQUALS      : return "NOT EQUAL (!=)";
-        case TokenType::LESS            : return "LESS (<)";
-        case TokenType::GREATER         : return "GREATER (>)";
-        case TokenType::LESS_EQUAL      : return "LESS OR EQUAL (<=)";
-        case TokenType::GREATER_EQUAL   : return "GREATER OR EQUAL (>=)";
 
-        // Brackets
-        case TokenType::OPEN_PAREN      : return "(";
-        case TokenType::CLOSE_PAREN     : return ")";
-        case TokenType::OPEN_BRACE      : return "{";
-        case TokenType::CLOSE_BRACE     : return "}";
-        case TokenType::OPEN_BRACKET    : return "[";
-        case TokenType::CLOSE_BRACKET   : return "]";
-        
-        // Interpunction
-        case TokenType::SEMI_COLON  : return ";";
-        case TokenType::COMMA       : return ",";
-        case TokenType::DOT         : return ".";
-
-        
-        // Keywords
-        case TokenType::WHILE   : return "while";
-        case TokenType::FOR     : return "for";
-        case TokenType::IF      : return "if";
-        case TokenType::ELSE    : return "else";
-        case TokenType::RETURN  : return "return";
-        case TokenType::TRUE    : return "true";
-        case TokenType::FALSE   : return "false";
-
-        // Dynamic
-        case TokenType::IDENT       : return "IDENTIFIER";
-        case TokenType::CMD_KEY     : return "COMMAND_KEY";
-        case TokenType::ANNOTATION  : return "ANNOTATION";
-        
-        // Special
-        case TokenType::NEW_LINE    : return "NEW_LINE";
-        case TokenType::END_OF_FILE : return "END_OF_FILE";
-        default: return "UNKNOWN";
+    inline std::optional<char> peek(int offset = 0) const 
+    {
+        if (m_idx + offset >= m_src.length()) {
+            return {};
+        }
+        // we are sure that this value exists
+        return m_src[m_idx + offset];
     }
-}
 
-struct Token {
-    TokenType type;
-    std::optional<std::string> value {};
-    size_t line;
-    size_t col;
-};
-
-class Tokenizer {
+    inline char consume() {
+        // m_idx++ -> first get at m_idx then increment m_idx by 1
+        char c = m_src.at(m_idx++);
+        if (c == '\n') {  line++; col = 0; }
+        else col++;
+        return c;
+    }
+    
 public:
-    inline explicit Tokenizer(const std::string src, SimplifiedCommandRegistry& registry)
-        : m_src(std::move(src)), m_reg(registry) {}
-
+    Impl(const std::string& src, SimplifiedCommandRegistry& registry)
+        : m_src(src), m_reg(registry) {}
+    
     std::vector<Token> tokenize() 
     {   
         std::vector<Token> tokens;
@@ -155,6 +90,8 @@ public:
 
             // keywords & idents
             if (std::isalpha(value)) {
+                size_t start_line = line, start_col = col;
+
                 buf.push_back(consume());
                 while (peek().has_value() &&
                     (std::isalnum(peek().value()) || peek().value() == '_' || peek().value() == '-')) {
@@ -164,28 +101,29 @@ public:
                 // check if word is keyword
                 auto it = KEYWORDS.find(buf);
                 if (it != KEYWORDS.end()) {
-                    tokens.push_back({ .type = it->second, .line = line, .col = col });
+                    tokens.push_back({ .type = it->second, .line = start_line, .col = start_col });
                     
                     buf.clear();
                     continue;
                 }
 
                 if (m_reg.isValid(buf)) {
-                    tokens.push_back({.type = TokenType::CMD_KEY, .value = buf, .line = line, .col = col });
+                    tokens.push_back({.type = TokenType::CMD_KEY, .value = buf, .line = start_line, .col = start_col });
                 } else {
-                    tokens.push_back({.type = TokenType::IDENT, .value = buf, .line = line, .col = col });
+                    tokens.push_back({.type = TokenType::IDENT, .value = buf, .line = start_line, .col = start_col });
                 } 
 
                 buf.clear();
                 continue;
             }
-
+            
             // numbers
             if (std::isdigit(value) ||
-                    (value == '-' && (std::isdigit(peek(1).value_or('0')) || peek(1).value_or('\0') == '.')) ||
-                    value == '.')
+                    (value == '-' && peek(1).has_value() && std::isdigit(peek(1).value())) ||
+                    (value == '.' && peek(1).has_value() && std::isdigit(peek(1).value())) ||
+                    (value == '-' && peek(1).has_value() && peek(1).value() == '.' && peek(2).has_value() && std::isdigit(peek(2).value())))
             {
-                std::string buf;       // first number
+                // reuse outer buf, already cleared
                 bool isFloat = false;
 
                 // optional minus
@@ -259,9 +197,7 @@ public:
             // annotations
             if (value == '@') {
                 consume(); // consume '@'
-
-                // consume annotation name
-                while (peek().has_value() && std::isalnum(peek().value()) && peek().value() != '_') {
+                while (peek().has_value() && (std::isalnum(peek().value()) || peek().value() == '_')) {
                     buf.push_back(consume());
                 }
 
@@ -354,33 +290,18 @@ public:
         }
         tokens.push_back({.type = TokenType::END_OF_FILE, .line = line, .col = col });
         m_idx = 0;
+        line = 1;
+        col = 0;
         return tokens;
     }
-
-private:
-
-    inline std::optional<char> peek(int offset = 0) const 
-    {
-        if (m_idx + offset >= m_src.length()) {
-            return {};
-        }
-        return m_src.at(m_idx + offset);
-    }
-
-    inline char consume() {
-        // m_idx++ -> first get at m_idx then increment m_idx by 1
-        char c = m_src.at(m_idx++);
-        if (c == '\n') {  line++; col = 0; }
-        else col++;
-        return c;
-    }
-
-    bool has_n_same_chars(const std::string& s, char c, int n) {
-        return std::count(s.begin(), s.end(), c) == n;
-    }
-
-    size_t line = 1, col = 0;
-    const std::string m_src;
-    SimplifiedCommandRegistry& m_reg;
-    size_t m_idx = 0;
 };
+
+// ========== WRAPPER ==========
+Tokenizer::Tokenizer(const std::string& source, SimplifiedCommandRegistry& registry)
+    : pImpl(std::make_unique<Impl>(source, registry)) {}
+
+Tokenizer::~Tokenizer() = default;  // Needed for unique_ptr<Impl>
+
+std::vector<Token> Tokenizer::tokenize() {
+    return pImpl->tokenize();
+}

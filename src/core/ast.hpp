@@ -1,13 +1,12 @@
-// ast.hpp
+// core/ast.hpp
 #pragma once
 
 #include <string>
 #include <vector>
 #include <memory>
-#include <any>
 
-#include "tokenization.hpp" // Just for Token struct
-#include "visitor.hpp"
+#include "./token.hpp"
+#include "./visitor.hpp"
 
 
 enum class DataType {
@@ -19,16 +18,16 @@ enum class VarStorageType {
 };
 
 
+
 struct Annotation {
     std::string name;
     // in the future -> annotation arguments -> @Annotation(type = "special") or something similar
 };
 
 
-
-
 struct VarInfo {
     std::string name;
+    
     // --- Semantic Data ---
     DataType dataType;
     //int scopeLevel;      // Scope depth when the variable was initialized
