@@ -1,7 +1,6 @@
 // middleend/analyzer.cpp
 #include "./analyzer.hpp"
 
-#include <unordered_map>
 #include <iostream>
 
 #include "./../core/ast.hpp"
@@ -49,15 +48,23 @@ public:
         return nullptr;
     }
 
-    auto getVariables() {
-        return variables_;
+    auto getScopes() {
+        return allScopes_;
     }
 
 private:
-    std::unordered_map<std::string, std::shared_ptr<VarInfo>> variables_;
+    //std::unordered_map<std::string, std::shared_ptr<VarInfo>> variables_;
+    std::vector<std::shared_ptr<Scope>> allScopes_;
+    std::vector<std::shared_ptr<Scope>> scopeStack_;
+    size_t nextScopeId_ = 0;
+
     size_t tempVarCount_ = 0;
     const Options& options_;
 
+    Scope& getCurrentScope() {
+        if (scopeStack_.empty()) error("Tried to access empty scope stack");
+        return *scopeStack_.back();
+    }
 
     std::string getCurrentScoreboard() const {
         // std::string scopeName = getCurrentScope().name;
@@ -67,6 +74,23 @@ private:
 
     std::string getTempVarName() {
         return "%" + std::to_string(tempVarCount_++);
+    }
+
+
+    void enterScope() {
+        auto newScope = std::make_shared<Scope>();
+
+        newScope->id = nextScopeId_++;
+        newScope->name = "scope_" + std::to_string(newScope->id);
+        newScope->parent = scopeStack_.empty() ? nullptr : scopeStack_.back();
+
+        allScopes_.push_back(newScope);
+        scopeStack_.push_back(newScope);
+    }
+
+    void exitScope() {
+        if (scopeStack_.empty()) error("Tried to exit scope but scope stack is empty");
+        scopeStack_.pop_back(); 
     }
 
     inline std::shared_ptr<VarInfo> visit(ASTNode& node) { return node.visit<std::shared_ptr<VarInfo>>(*this); }
@@ -105,6 +129,9 @@ void analyzeCommand(const CommandNode& node) {
             }
         }
 
+        bool isUsed = false;
+        if(isExternal) isUsed = true; // if variable is external then we dont know if the variable is used later
+
         // set all data to be sure everything is correct
         VarInfo varData = { 
             .name           = varName,
@@ -117,13 +144,20 @@ void analyzeCommand(const CommandNode& node) {
             .storageIdent   = getCurrentScoreboard(),
             .storagePath    = varName,
             
-            .isUsed         = false, // if we redeclare the variable but it isnt used in expression then this will stay false
+            .isUsed         = isUsed, // if we redeclare the variable but it isnt used in expression then this will stay false
             .isInitialized  = true,
         };
         
         
         auto varInfo = std::make_shared<VarInfo>(varData);
-        variables_[varName] = varInfo;
+        //variables_[varName] = varInfo;
+        // getCurrentScope().declare(varName, varInfo);
+
+        // FALSE if updated, TRUE if created new variable
+        bool isNew = getCurrentScope().declare(varName, varInfo);
+        if (!isNew) {
+            varInfo->isUsed = true;
+        }
 
         node.varInfo = varInfo;
         node.isAnalyzed = true;
@@ -138,11 +172,12 @@ void analyzeCommand(const CommandNode& node) {
             // if ident then tokValue = varName
 
             // check if variable exists
-            if (variables_.count(tokValue) <= 0) {
+            auto varInfo = getCurrentScope().lookup(tokValue);
+            if (!varInfo) {
                 error("Tried to use unassigned variable " + tokValue);
+                return nullptr;
             }
 
-            auto varInfo = variables_[tokValue]; // get original pointer
             varInfo->isUsed = true;
 
             // use force dynamic only for variable use
@@ -362,9 +397,11 @@ void analyzeCommand(const CommandNode& node) {
     }
 
     void analyzeScope(const ScopeNode& node) {
+        enterScope();
         for (const auto& arg : node.statements) {
             visit(*arg); // Analyze all nodes
         }
+        exitScope();
         node.isAnalyzed = true;
     }
 
@@ -442,8 +479,8 @@ Analyzer::Analyzer(Options& options)
 
 Analyzer::~Analyzer() = default; // Needed for unique_ptr<Impl>
 
-std::unordered_map<std::string, std::shared_ptr<VarInfo>> Analyzer::getVariables() const {
-    return pImpl->getVariables();
+std::vector<std::shared_ptr<Scope>> Analyzer::getScopes() const {
+    return pImpl->getScopes();
 }
 
 void Analyzer::analyze(ASTNode& node) {

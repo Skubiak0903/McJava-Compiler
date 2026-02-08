@@ -1,14 +1,10 @@
-a = 5;
-b = 20;
-c = 2;
-d = 15;
 
-say "a = " a ", b = " b ", c = " c ", d = " d
+x = 5;
 
-e = a + b * c / a - b;
-f = (a + b) * (c - e) / d;
-x = e + f * e / a - 1;
+say x;
 
-say "e = " e
-say "f = " f
-say "x = " x
+{
+x = 6;
+}
+
+say x;

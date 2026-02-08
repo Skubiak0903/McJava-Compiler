@@ -4,17 +4,18 @@
 #include <string>
 #include <memory>
 #include <filesystem>
-#include <unordered_map>
+#include <vector>
 
-#include "./../core/visitor.hpp"
+#include "./../core/scope.hpp"
 
 namespace fs = std::filesystem;
+
 struct Options;
 struct ASTNode;
 
 class FunctionGenerator {
 public:
-    FunctionGenerator(fs::path& path, Options& options, std::unordered_map<std::string, std::shared_ptr<VarInfo>> variables);
+    FunctionGenerator(fs::path& path, Options& options, std::vector<std::shared_ptr<Scope>> variables);
     ~FunctionGenerator();
 
     void generate(ASTNode& node);

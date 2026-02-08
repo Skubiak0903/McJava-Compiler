@@ -190,7 +190,7 @@ int main(int argc, char* argv[])
 
     Analyzer analyzer(options);
     analyzer.analyze(*ast);
-    const auto variables = analyzer.getVariables();
+    const auto scopes = analyzer.getScopes();
 
     if (options.dumpAnalyzerTree) {
         std::ofstream file(filename + "-analyzer-tree.dump", std::ios::out);
@@ -232,7 +232,7 @@ int main(int argc, char* argv[])
 
         fs::path path(filename);
         if (!options.silent) std::cout << "Path: " << path << "\n";
-        FunctionGenerator funcGen(path, options, variables);
+        FunctionGenerator funcGen(path, options, scopes);
         funcGen.generate(*ast);
     }
     

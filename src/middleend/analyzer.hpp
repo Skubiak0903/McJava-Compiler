@@ -2,10 +2,10 @@
 #pragma once
 
 #include <memory>
-#include <unordered_map>
+#include <vector>
 
 #include "./../core/visitor.hpp"
-
+#include "./../core/scope.hpp"
 
 class Options;
 class ASTNode;
@@ -16,7 +16,7 @@ public:
     ~Analyzer();
 
     void analyze(ASTNode& node);
-    std::unordered_map<std::string, std::shared_ptr<VarInfo>> getVariables() const;
+    std::vector<std::shared_ptr<Scope>> getScopes() const;
 private:
     // PImpl - implementation hidden in .cpp
     class Impl;
