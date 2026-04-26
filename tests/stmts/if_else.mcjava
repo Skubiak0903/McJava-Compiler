@@ -1,5 +1,5 @@
 // Test: If-Else-If Ladder
-score = 75;
+var score = 75;
 
 if (score >= 90) {
     say "A"

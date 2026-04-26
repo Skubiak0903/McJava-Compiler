@@ -1,13 +1,13 @@
-a = 5;
-b = 20;
-c = 2;
-d = 15;
+var a = 5;
+var b = 20;
+var c = 2;
+var d = 15;
 
 say "a = " a ", b = " b ", c = " c ", d = " d
 
-e = a + b * c / a - b;
-f = (a + b) * (c - e) / d;
-x = e + f * e / a - 1;
+var e = a + b * c / a - b;
+var f = (a + b) * (c - e) / d;
+var x = e + f * e / a - 1;
 
 say "e should be -7"
 say "e = " e
