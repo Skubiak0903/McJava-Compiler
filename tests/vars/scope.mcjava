@@ -1,0 +1,14 @@
+var x = 5;
+say x; // should be 5
+
+{
+    var x = 6;
+}
+
+say x; // should be 5
+
+{
+    x = 6;
+}
+
+say x; // should be 6

@@ -167,16 +167,8 @@ private:
     void generateVarDecl(const VarDeclNode& node) {
 
         // dont emit unused variables
-        if (!node.varInfo->isUsed && options_.removeUnusedVars) {
+        if (!node.varInfo->isUsed && options_.removeUnusedVars && !node.varInfo->isExternal) {
             return;
-        }
-
-        bool isExternal = false;
-        
-        for (const auto& anno : node.annotations) {
-            if (anno.name == "External" || anno.name == "Global") {
-                isExternal = true;
-            }
         }
 
         // if its used but its constant then also dont emit it
@@ -191,7 +183,7 @@ private:
         // but we still arent using the x variable
         // 
         // NOTE: it doest work when expression folding is disabled
-        if (node.initValIsConst && node.varInfo->isUsed && options_.doConstantFolding && !isExternal && options_.removeUnusedVars && node.varInfo->isConstant) { // we dont need to add node.varInfo->isUsed -> all unused were remove above
+        if (node.initValIsConst && node.varInfo->isUsed && options_.doConstantFolding && !node.varInfo->isExternal && options_.removeUnusedVars && node.varInfo->isConstant) { // we dont need to add node.varInfo->isUsed -> all unused were remove above
             return;
         }
 
@@ -200,19 +192,20 @@ private:
         std::string varName = node.varInfo->name;
         auto& output = getCurrentOutput();
 
-        // if is external check if value existis and if not then set it to default value
-        if (isExternal) {
+        // if is external check if value exists and if not then set it to default value
+        if (node.varInfo->isExternal) {
             // execute store success score %i mcjava_sb_scope_0 run scoreboard players get started mcjava_sb_scope_0
             // execute if score %i mcjava_sb_scope_0 matches 0 run scoreboard players set %i mcjava_sb_scope_0 10
 
-            output << "#Debug: External variable " << varName << "\n";
+            output << "#Debug: External variable declaration " << varName << "\n";
             output << "execute store success score " << "%e" << " " << node.varInfo->storageIdent << " run scoreboard players get " << varName << " " << node.varInfo->storageIdent << "\n";
             
-            if (node.initValIsConst) {
+            if (!node.varInfo->constValue.empty()) { // needs to be like that, we don't know if its const by isConstant field, as it is  always false when value is external
+                //output << "#Debug: Constant var [CONST: " + node.initValConstValue + "]\n";
                 output << "execute if score %e " << node.varInfo->storageIdent << " matches 0 run scoreboard players set " << varName << " " << node.varInfo->storageIdent << " " << node.initValConstValue << "\n";
             } else {
                 VarInfo tempVar = *visit(*node.value);
-
+                
                 output << "execute if score %e " << node.varInfo->storageIdent << " matches 0 run scoreboard players operation " << varName << " " << node.varInfo->storageIdent << " = " << tempVar.storagePath << " " << tempVar.storageIdent << "\n";
             }
             return;
@@ -235,11 +228,11 @@ private:
 
     void generateVarAssign(const VarAssignNode& node) {
         // dont emit unused variables
-        if (!node.varInfo->isUsed && options_.removeUnusedVars) {
+        if (!node.varInfo->isUsed && options_.removeUnusedVars && !node.varInfo->isExternal) {
             return;
         }
 
-        if (node.initValIsConst && node.varInfo->isUsed && options_.doConstantFolding && options_.removeUnusedVars && node.varInfo->isConstant) { // we dont need to add node.varInfo->isUsed -> all unused were remove above
+        if (node.initValIsConst && node.varInfo->isUsed && options_.doConstantFolding && options_.removeUnusedVars && node.varInfo->isConstant && !node.varInfo->isExternal) { // we dont need to add node.varInfo->isUsed -> all unused were remove above
             return;
         }
 
@@ -250,13 +243,13 @@ private:
        
        
         if (node.initValIsConst) {
-            output << "#Debug: Constant var [CONST: " + node.initValConstValue + "]\n";
+            output << "#Debug: Constant var assign [CONST: " + node.initValConstValue + "]\n";
 
             output << "scoreboard players set " << varName << " " << node.varInfo->storageIdent << " " << node.initValConstValue << "\n";
         } else {
             VarInfo tempVar = *visit(*node.value);
 
-            output << "#Debug: Dynamic var \n";
+            output << "#Debug: Dynamic var assign\n";
             output << "scoreboard players operation " << varName << " " << node.varInfo->storageIdent << " = " << tempVar.storagePath << " " << tempVar.storageIdent << "\n";
         }
     }
@@ -280,34 +273,29 @@ private:
         // };
 
         // if constant -> dont generate, higher node should implement it properly
-        if(node.varInfo->isConstant && !node.forceDynamic) {
+        if(node.varInfo->isConstant || node.varInfo->isExternal) {
             
             // we dont want to change anything in variables -> just generate it
             //node.varInfo->storagePath = tokValue;
             //node.varInfo->storageIdent = getCurrentScoreboard();
+            //output << "#Debug: Constant Expression [" + node.varInfo->constValue + "]\n";
             return node.varInfo;
         }
 
-        // this block appears to be unreachable
-        /*if (node.varInfo->isConstant) {
-            output << "#Debug: Constant Expression\n";
-            output << "scoreboard players set " << varName << " " << currentSb << " " << node.varInfo->constValue << "\n";
-        } else */
+        // retrive variable -> variable exists because analyzer checked it
+        //auto varInfo = variables_.at(node.token.value.value());
+        auto varInfo = getCurrentScope().lookup(tokValue);
 
-        {
-            // retrive variable -> variable exists because analyzer checked it
-            //auto varInfo = variables_.at(node.token.value.value());
-            auto varInfo = getCurrentScope().lookup(tokValue);
+        // can be wrong but we dont need to emits anything becouse we are only copying this value, and
+        // the binary operation copy values that they change by themselves
+        // and if we need to only copy the variable then we dont need to pass the real VarInfo highier 
+        
+        //output << "#Debug: Dynamic Expression\n";
+        //output << "scoreboard players operation " << varName << " " << currentSb << " = " << varInfo.storagePath << " " << varInfo.storageIdent << "\n";
 
-            // can be wrong but we dont need to emits anything becouse we are only copying this value, and
-            // the binary operation copy values that they change by themselves
-            // and if we need to only copy the variable then we dont need to pass the real VarInfo highier 
-            
-            //output << "#Debug: Dynamic Expression\n";
-            //output << "scoreboard players operation " << varName << " " << currentSb << " = " << varInfo.storagePath << " " << varInfo.storageIdent << "\n";
-
-            return varInfo;
-        }
+        //output << "#Debug: Node   Expression [" + node.varInfo->name + ", " + std::to_string(node.varInfo->isConstant) + "]\n";
+        //output << "#Debug: Lookup Expression [" + varInfo->name + ", " + std::to_string(varInfo->isConstant) + "]\n";
+        return varInfo;
     }
 
 

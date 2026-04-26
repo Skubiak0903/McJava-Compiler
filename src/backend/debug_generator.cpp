@@ -81,7 +81,8 @@ public:
             std::string type = ", Type: " + dataTypeToString(node.varInfo->dataType);
             std::string used = node.varInfo->isUsed ? ", [USED]" : ", [UNUSED]";
             std::string isConst = node.varInfo->isConstant ? ", [CONST: " + node.varInfo->constValue + "]" : ", [NON-CONST]";
-            output_ << "VarAssign: " << name << type << used << isConst << "\n";
+            std::string isExternal = node.varInfo->isExternal ? ", [EXTERNAL]" : ", [NON-EXTERNAL]";
+            output_ << "VarAssign: " << name << type << used << isConst << isExternal << "\n";
         } else {
             output_ << "VarAssign: " << node.name.value.value_or("[no name]") << "\n";
         }

@@ -28,6 +28,7 @@ struct VarInfo {
     // --- Additional Flags ---
     bool isUsed;
     bool isInitialized;
+    bool isExternal;
 };
 
 

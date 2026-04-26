@@ -130,8 +130,8 @@ void analyzeCommand(const CommandNode& node) {
             }
         }
 
-        bool isUsed = false;
-        if(isExternal) isUsed = true; // if variable is external then we dont know if the variable is used later
+        //bool isUsed = false;
+        //if(isExternal) isUsed = true; // if variable is external then we dont know if the variable is used later
 
         // set all data to be sure everything is correct
         VarInfo varData = { 
@@ -145,8 +145,9 @@ void analyzeCommand(const CommandNode& node) {
             .storageIdent   = getCurrentScoreboard(),
             .storagePath    = varName,
             
-            .isUsed         = isUsed,
+            .isUsed         = isExternal, // true for external vars
             .isInitialized  = true,
+            .isExternal     = isExternal,
         };
         
         
@@ -179,12 +180,17 @@ void analyzeCommand(const CommandNode& node) {
             error("VarAssign Error: Could not infer type of variable " + varName);
         }
 
+        auto lookupVar = getCurrentScope().lookup(varName);
+        if (!lookupVar) {
+            error("VarAssign Error: Variable '" + varName + "' doesn't exists.");
+        }
+
         // set all data to be sure everything is correct
         VarInfo varData = { 
             .name           = varName,
             .dataType       = resultVar->dataType,
             
-            .isConstant     = resultVar->isConstant,
+            .isConstant     = resultVar->isConstant && !lookupVar->isExternal,
             .constValue     = resultVar->constValue, // we can just set without checking if isConstant is true
             
             .storageType    = VarStorageType::SCOREBOARD, // for now we only support int so it will be fine with scoreboard
@@ -193,16 +199,14 @@ void analyzeCommand(const CommandNode& node) {
             
             .isUsed         = true,
             .isInitialized  = true,
+            .isExternal     = lookupVar->isExternal, // propagate external flag
         };
         
         
         auto varInfo = std::make_shared<VarInfo>(varData);
 
-        // TRUE if assigned, false otherwise
-        bool assigned = getCurrentScope().assign(varName, varInfo);
-        if (!assigned) {
-            error("VarAssign Error: Variable '" + varName + "' doesn't exists.");
-        }
+        // checked earlier, with lookup
+        getCurrentScope().assign(varName, varInfo);
 
         node.varInfo = varInfo;
         node.isAnalyzed = true;
@@ -229,9 +233,6 @@ void analyzeCommand(const CommandNode& node) {
             varInfo->isUsed = true;
             if (node.forceDynamic)  varInfo->isConstant = false;
 
-            // use force dynamic only for variable use
-            //if (node.forceDynamic) varInfo-> isConstant = true; // FIXME: for some reason if its flipped it generates right
-
             node.varInfo = varInfo;
             node.isAnalyzed = true;
             return varInfo;
@@ -251,6 +252,7 @@ void analyzeCommand(const CommandNode& node) {
 
             .isUsed        = false,
             .isInitialized = true,
+            .isExternal    = false
         };
         
         switch (node.token.type)
