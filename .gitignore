@@ -1,6 +1,9 @@
 ### Universal ###
 # Common files that should be ignored in all projects
 
+# vscode
+.vscode
+
 # Logs
 *.log
 
@@ -30,3 +33,6 @@
 /tests/**/*
 !/tests/**/
 !/tests/**/*.mcjava
+
+# test folder
+/tests/test/*

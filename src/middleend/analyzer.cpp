@@ -59,7 +59,7 @@ private:
     size_t nextScopeId_ = 0;
 
     size_t tempVarCount_ = 0;
-    const Options& options_;
+    Options& options_;
 
     Scope& getCurrentScope() {
         if (scopeStack_.empty()) error("Tried to access empty scope stack");
@@ -379,13 +379,18 @@ void analyzeCommand(const CommandNode& node) {
     }
 
     void analyzeWhile(const WhileNode& node) {
-        invalidateVarsInNode(node.body.get());
+        //invalidateVarsInNode(node.body.get());
         
         // we need to first invalidate variables that were changed in the loop body
         // and then we can analyze condition and body with correct information about which variables are constant
         auto varInfo = visit(*node.condition);
-        visit(*node.body);
 
+        // disable constant folding for while loops, it breaks and only does 1 pass of the loop wichout correct identification of const values
+        bool constantFolding = options_.doConstantFolding;
+        options_.doConstantFolding = false;
+        visit(*node.body);
+        options_.doConstantFolding = constantFolding;
+        
         if (varInfo->isConstant && !(varInfo->constValue == "0" || varInfo->constValue == "1")) {
             error("While condition must have expression that returns true or false");
         } 
@@ -415,7 +420,7 @@ void analyzeCommand(const CommandNode& node) {
             /*
              *  EVERYTHING that is commented is not implemented at the moment
              */
-
+            
             // float + int -> float
             //if (leftType == DataType::FLOAT && rightType == DataType::INT) return DataType::FLOAT;  
             //if (leftType == DataType::INT && rightType == DataType::FLOAT) return DataType::FLOAT;  
