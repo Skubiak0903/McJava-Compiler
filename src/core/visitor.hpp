@@ -7,6 +7,7 @@
 // Forward declarations
 class CommandNode;
 class VarDeclNode;
+class VarAssignNode;
 class ExprNode;
 class BinaryOpNode;
 class IfNode;
@@ -20,11 +21,12 @@ class ASTVisitor {
 public:
     virtual ~ASTVisitor() = default;
 
-    virtual ASTReturn visitCommand  (const CommandNode& node)   = 0;
-    virtual ASTReturn visitVarDecl  (const VarDeclNode& node)   = 0;
-    virtual ASTReturn visitExpr     (const ExprNode& node)      = 0;
-    virtual ASTReturn visitBinaryOp (const BinaryOpNode& node)  = 0;
-    virtual ASTReturn visitIf       (const IfNode& node)        = 0;
-    virtual ASTReturn visitWhile    (const WhileNode& node)     = 0;
-    virtual ASTReturn visitScope    (const ScopeNode& node)     = 0;
+    virtual ASTReturn visitCommand   (const CommandNode& node)   = 0;
+    virtual ASTReturn visitVarDecl   (const VarDeclNode& node)   = 0;
+    virtual ASTReturn visitVarAssign (const VarAssignNode& node)   = 0;
+    virtual ASTReturn visitExpr      (const ExprNode& node)      = 0;
+    virtual ASTReturn visitBinaryOp  (const BinaryOpNode& node)  = 0;
+    virtual ASTReturn visitIf        (const IfNode& node)        = 0;
+    virtual ASTReturn visitWhile     (const WhileNode& node)     = 0;
+    virtual ASTReturn visitScope     (const ScopeNode& node)     = 0;
 };

@@ -18,6 +18,7 @@ const inline std::unordered_map<std::string, TokenType> KEYWORDS = {
     {"return", TokenType::RETURN},
     {"true", TokenType::TRUE},
     {"false", TokenType::FALSE},
+    {"var", TokenType::VAR},
 };
 
 const inline std::unordered_map<char, TokenType> CHARS = {

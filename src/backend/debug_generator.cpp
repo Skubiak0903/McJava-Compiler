@@ -57,11 +57,33 @@ public:
         if (node.isAnalyzed) {
             std::string name = node.varInfo->name;
             std::string type = ", Type: " + dataTypeToString(node.varInfo->dataType);
-            std::string used = node.varInfo->isUsed ? ", [USED]" : ", [UNUSED]";
             std::string isConst = node.varInfo->isConstant ? ", [CONST: " + node.varInfo->constValue + "]" : ", [NON-CONST]";
-            output_ << "VarDecl: " << name << type << used << isConst << "\n";
+            output_ << "VarDecl: " << name << type << isConst << "\n";
         } else {
             output_ << "VarDecl: " << node.name.value.value_or("[no name]") << "\n";
+        }
+
+        indent_++;
+        visit(*node.value);
+        indent_--; 
+
+        output_ << "\n";
+        return done();
+    }
+
+    ASTReturn visitVarAssign(const VarAssignNode& node) override {
+        printAnnotations(node);
+
+        indent();
+        
+        if (node.isAnalyzed) {
+            std::string name = node.varInfo->name;
+            std::string type = ", Type: " + dataTypeToString(node.varInfo->dataType);
+            std::string used = node.varInfo->isUsed ? ", [USED]" : ", [UNUSED]";
+            std::string isConst = node.varInfo->isConstant ? ", [CONST: " + node.varInfo->constValue + "]" : ", [NON-CONST]";
+            output_ << "VarAssign: " << name << type << used << isConst << "\n";
+        } else {
+            output_ << "VarAssign: " << node.name.value.value_or("[no name]") << "\n";
         }
 
         indent_++;

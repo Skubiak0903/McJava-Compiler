@@ -66,6 +66,21 @@ public:
     }
 };
 
+class VarAssignNode : public ASTNode {
+public:
+    Token name;
+    std::unique_ptr<ASTNode> value;
+ 
+    mutable std::shared_ptr<VarInfo> varInfo;
+    
+    VarAssignNode(Token name, std::unique_ptr<ASTNode> value)
+        : name(name), value(std::move(value)) {}
+
+    ASTReturn accept(ASTVisitor& visitor) const override {
+        return visitor.visitVarAssign(*this);
+    }
+};
+
 
 class ExprNode : public ASTNode {
 public:

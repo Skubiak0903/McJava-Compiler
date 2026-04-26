@@ -25,6 +25,11 @@ public:
         return nullptr;
     }
 
+    ASTReturn visitVarAssign(const VarAssignNode& node) override {
+        analyzeVarAssign(node);
+        return nullptr;
+    }
+
     ASTReturn visitExpr(const ExprNode& node) override {
         return analyzeExpr(node); 
     }
@@ -115,10 +120,6 @@ void analyzeCommand(const CommandNode& node) {
         if (resultVar->dataType == DataType::UNKNOWN) {
             error("VarDecl Error: Could not infer type of variable " + varName);
         }
-        
-        // redeclaration check -> we allow it
-        //if (variables_.count(varName) > 0) {
-        //}
 
         bool isExternal = false; // if is external then ignore value of this declaration for now
         // let rezultvar be analyzed just to get dataType for now, but this needs to be changed later
@@ -144,7 +145,7 @@ void analyzeCommand(const CommandNode& node) {
             .storageIdent   = getCurrentScoreboard(),
             .storagePath    = varName,
             
-            .isUsed         = isUsed, // if we redeclare the variable but it isnt used in expression then this will stay false
+            .isUsed         = isUsed,
             .isInitialized  = true,
         };
         
@@ -153,10 +154,51 @@ void analyzeCommand(const CommandNode& node) {
         //variables_[varName] = varInfo;
         // getCurrentScope().declare(varName, varInfo);
 
-        // FALSE if updated, TRUE if created new variable
-        bool isNew = getCurrentScope().declare(varName, varInfo);
-        if (!isNew) {
-            varInfo->isUsed = true;
+        // declare variable in this scope
+        bool declared = getCurrentScope().declare(varName, varInfo);
+        if (!declared) {
+            error("VarDecl Error: Variable '" + varName + "' cannot be declared, as it exists already in current Scope.");
+        }
+
+        node.varInfo = varInfo;
+        node.isAnalyzed = true;
+    }
+
+    void analyzeVarAssign(const VarAssignNode& node) {
+        // analyze value first
+        auto resultVar = visit(*node.value);
+        std::string varName = node.name.value.value();
+        
+        if (varName.empty()) error("VarAssign Error: Variable name is empty!");
+        if (!resultVar)      error("VarAssign Error: Should be UNREACHABLE");
+
+        if (resultVar->dataType == DataType::UNKNOWN) {
+            error("VarAssign Error: Could not infer type of variable " + varName);
+        }
+
+        // set all data to be sure everything is correct
+        VarInfo varData = { 
+            .name           = varName,
+            .dataType       = resultVar->dataType,
+            
+            .isConstant     = resultVar->isConstant,
+            .constValue     = resultVar->constValue, // we can just set without checking if isConstant is true
+            
+            .storageType    = VarStorageType::SCOREBOARD, // for now we only support int so it will be fine with scoreboard
+            .storageIdent   = getCurrentScoreboard(),
+            .storagePath    = varName,
+            
+            .isUsed         = true,
+            .isInitialized  = true,
+        };
+        
+        
+        auto varInfo = std::make_shared<VarInfo>(varData);
+
+        // TRUE if assigned, false otherwise
+        bool assigned = getCurrentScope().assign(varName, varInfo);
+        if (!assigned) {
+            error("VarAssign Error: Variable '" + varName + "' doesn't exists.");
         }
 
         node.varInfo = varInfo;
@@ -182,7 +224,7 @@ void analyzeCommand(const CommandNode& node) {
 
             // use force dynamic only for variable use
             //if (node.forceDynamic) varInfo-> isConstant = true; // FIXME: for some reason if its flipped it generates right
-        
+            
             node.varInfo = varInfo;
             node.isAnalyzed = true;
             return varInfo;
@@ -379,24 +421,30 @@ void analyzeCommand(const CommandNode& node) {
     }
 
     void analyzeWhile(const WhileNode& node) {
-        //invalidateVarsInNode(node.body.get());
-        
-        // we need to first invalidate variables that were changed in the loop body
-        // and then we can analyze condition and body with correct information about which variables are constant
+        invalidateVarsInNode(node.body.get());
         auto varInfo = visit(*node.condition);
-
+        
         // disable constant folding for while loops, it breaks and only does 1 pass of the loop wichout correct identification of const values
         bool constantFolding = options_.doConstantFolding;
         options_.doConstantFolding = false;
+        
+        // we need to first invalidate variables that were changed in the loop body
+        // and then we can analyze condition and body with correct information about which variables are constant
+
         visit(*node.body);
-        options_.doConstantFolding = constantFolding;
         
         if (varInfo->isConstant && !(varInfo->constValue == "0" || varInfo->constValue == "1")) {
             error("While condition must have expression that returns true or false");
         } 
+        
+        // restore previous state of constant folding option
+        options_.doConstantFolding = constantFolding;
+        
+        // node.isConditionConstant = varInfo->isConstant;
+        // node.conditionValue      = varInfo->isConstant && (varInfo->constValue == "1");
 
-        node.isConditionConstant = varInfo->isConstant;
-        node.conditionValue      = varInfo->isConstant && (varInfo->constValue == "1");
+        node.isConditionConstant = false;
+        node.conditionValue      = false;
         
         node.isAnalyzed = true;
     }
@@ -420,7 +468,7 @@ void analyzeCommand(const CommandNode& node) {
             /*
              *  EVERYTHING that is commented is not implemented at the moment
              */
-            
+
             // float + int -> float
             //if (leftType == DataType::FLOAT && rightType == DataType::INT) return DataType::FLOAT;  
             //if (leftType == DataType::INT && rightType == DataType::FLOAT) return DataType::FLOAT;  

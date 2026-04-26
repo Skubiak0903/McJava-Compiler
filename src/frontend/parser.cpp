@@ -82,9 +82,14 @@ private:
         Token tok = peek();
         std::unique_ptr<ASTNode> node;
 
-        // 1. Variable assignment (x = 5)
-        if (tok.type == TokenType::IDENT && peek(1).type == TokenType::EQUALS) {
+        // 1. Variable declaration (var x = 5)
+        if (tok.type == TokenType::VAR && peek(1).type == TokenType::IDENT && peek(2).type == TokenType::EQUALS) {
             node = parseVarDecl();
+        }
+
+        // 1.1. Variable assignment (x = 5)
+        if (tok.type == TokenType::IDENT && peek(1).type == TokenType::EQUALS) {
+            node = parseVarAssigment();
         }
 
         // 2. Minecraft command (say "hello")
@@ -132,6 +137,7 @@ private:
 
 
     std::unique_ptr<ASTNode> parseVarDecl() {
+        consume(); // consume 'var'
         Token name = consume(); // consume IDENT
         consume(); // consume '='
 
@@ -139,6 +145,16 @@ private:
         auto value = parseExpression();
 
         return std::make_unique<VarDeclNode>(name, std::move(value));
+    }
+
+        std::unique_ptr<ASTNode> parseVarAssigment() {
+        Token name = consume(); // consume IDENT
+        consume(); // consume '='
+
+        if (!name.value.has_value()) error("Encountered variable assignation without name");
+        auto value = parseExpression();
+
+        return std::make_unique<VarAssignNode>(name, std::move(value));
     }
 
 

@@ -92,6 +92,11 @@ public:
         return nullptr;
     }
 
+    ASTReturn visitVarAssign(const VarAssignNode& node) override {
+        generateVarAssign(node);
+        return nullptr;
+    }
+
     ASTReturn visitExpr(const ExprNode& node) override {
         return generateExpr(node); 
     }
@@ -217,7 +222,48 @@ private:
 
        
         if (node.varInfo->isConstant) {
-            output << "#Debug: Constant var\n";
+            output << "#Debug: Constant var\n";            std::string isConst = node.varInfo->isConstant ? ", [CONST: " + node.varInfo->constValue + "]" : ", [NON-CONST]";
+
+            output << "scoreboard players set " << varName << " " << node.varInfo->storageIdent << " " << node.varInfo->constValue << "\n";
+        } else {
+            VarInfo tempVar = *visit(*node.value);
+
+            output << "#Debug: Dynamic var \n";
+            output << "scoreboard players operation " << varName << " " << node.varInfo->storageIdent << " = " << tempVar.storagePath << " " << tempVar.storageIdent << "\n";
+        }
+    }
+
+    void generateVarAssign(const VarAssignNode& node) {
+        // dont emit unused variables
+        if (!node.varInfo->isUsed && options_.removeUnusedVars) {
+            return;
+        }
+
+        // if its used but its constant then also dont emit it
+        // example:
+        //   x = 10
+        //   say x
+        // 
+        // it would be compiled to:
+        //   scoreboard players set x mcjava_sb_scope_0 10
+        //   tellraw @a [{"text":"10"},]
+        // 
+        // but we still arent using the x variable
+        // 
+        // NOTE: it doest work when expression folding is disabled
+        if (node.varInfo->isConstant && node.varInfo->isUsed && options_.doConstantFolding && options_.removeUnusedVars) { // we dont need to add node.varInfo->isUsed -> all unused were remove above
+            return;
+        }
+
+
+
+        std::string varName = node.varInfo->name;
+        auto& output = getCurrentOutput();
+       
+       
+        if (node.varInfo->isConstant) {
+            output << "#Debug: Constant var\n";            std::string isConst = node.varInfo->isConstant ? ", [CONST: " + node.varInfo->constValue + "]" : ", [NON-CONST]";
+
             output << "scoreboard players set " << varName << " " << node.varInfo->storageIdent << " " << node.varInfo->constValue << "\n";
         } else {
             VarInfo tempVar = *visit(*node.value);
