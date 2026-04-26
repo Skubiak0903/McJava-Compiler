@@ -51,30 +51,32 @@ public:
 };
 
 
-class VarDeclNode : public ASTNode {
+class VarNode : public ASTNode {
 public:
     Token name;
     std::unique_ptr<ASTNode> value;
  
     mutable std::shared_ptr<VarInfo> varInfo;
-    
-    VarDeclNode(Token name, std::unique_ptr<ASTNode> value)
+
+    mutable bool initValIsConst = false;
+    mutable std::string initValConstValue;
+
+    VarNode(Token name, std::unique_ptr<ASTNode> value)
         : name(name), value(std::move(value)) {}
+};
+
+class VarDeclNode : public VarNode {
+public:
+    using VarNode::VarNode;  // inherit constructors
 
     ASTReturn accept(ASTVisitor& visitor) const override {
         return visitor.visitVarDecl(*this);
     }
 };
 
-class VarAssignNode : public ASTNode {
+class VarAssignNode : public VarNode {
 public:
-    Token name;
-    std::unique_ptr<ASTNode> value;
- 
-    mutable std::shared_ptr<VarInfo> varInfo;
-    
-    VarAssignNode(Token name, std::unique_ptr<ASTNode> value)
-        : name(name), value(std::move(value)) {}
+    using VarNode::VarNode;  // inherit contructors
 
     ASTReturn accept(ASTVisitor& visitor) const override {
         return visitor.visitVarAssign(*this);
@@ -139,7 +141,11 @@ public:
     std::unique_ptr<ASTNode> body;
 
     mutable bool isConditionConstant = false;
-    mutable bool conditionValue = false;
+    mutable bool conditionValue = false;    // If is constant and this is false then while loop never starts
+
+    // needed because condition can have variables that could be invalidated, and it if gets changed to not-const, we dont know if the first check is needed
+    mutable bool isFirstCheckConstant;
+    mutable bool firstCheckConstValue;
     
     WhileNode(std::unique_ptr<ASTNode> condition, std::unique_ptr<ASTNode> body)
         : condition(std::move(condition)), body(std::move(body)) {}

@@ -17,7 +17,6 @@ struct VarInfo {
     
     // --- Semantic Data ---
     DataType dataType;
-    //int scopeLevel;      // Scope depth when the variable was initialized
     bool isConstant;
     std::string constValue;
 

@@ -162,6 +162,9 @@ void analyzeCommand(const CommandNode& node) {
 
         node.varInfo = varInfo;
         node.isAnalyzed = true;
+
+        node.initValIsConst = varInfo->isConstant; // persistent even after varInfo gets changed
+        node.initValConstValue = varInfo->constValue;
     }
 
     void analyzeVarAssign(const VarAssignNode& node) {
@@ -203,6 +206,9 @@ void analyzeCommand(const CommandNode& node) {
 
         node.varInfo = varInfo;
         node.isAnalyzed = true;
+
+        node.initValIsConst = varInfo->isConstant; // persistent even after varInfo gets changed
+        node.initValConstValue = varInfo->constValue;
     }
 
 
@@ -221,10 +227,11 @@ void analyzeCommand(const CommandNode& node) {
             }
 
             varInfo->isUsed = true;
+            if (node.forceDynamic)  varInfo->isConstant = false;
 
             // use force dynamic only for variable use
             //if (node.forceDynamic) varInfo-> isConstant = true; // FIXME: for some reason if its flipped it generates right
-            
+
             node.varInfo = varInfo;
             node.isAnalyzed = true;
             return varInfo;
@@ -420,17 +427,19 @@ void analyzeCommand(const CommandNode& node) {
         node.isAnalyzed = true;
     }
 
-    void analyzeWhile(const WhileNode& node) {
-        invalidateVarsInNode(node.body.get());
-        auto varInfo = visit(*node.condition);
-        
+    void analyzeWhile(const WhileNode& node) {        
+        // first check to see if this loop will be entered
+        auto enterVarInfo = visit(*node.condition);
+
+
         // disable constant folding for while loops, it breaks and only does 1 pass of the loop wichout correct identification of const values
         bool constantFolding = options_.doConstantFolding;
         options_.doConstantFolding = false;
         
-        // we need to first invalidate variables that were changed in the loop body
-        // and then we can analyze condition and body with correct information about which variables are constant
+        // invalidate variables in body, and analyze body with disabled constant folding & dynamic/invalidated variables        
+        foreDynamicVarsInNode(node.body.get());
 
+        auto varInfo = visit(*node.condition); // second check, because vars used in condition could be invalidated
         visit(*node.body);
         
         if (varInfo->isConstant && !(varInfo->constValue == "0" || varInfo->constValue == "1")) {
@@ -440,11 +449,11 @@ void analyzeCommand(const CommandNode& node) {
         // restore previous state of constant folding option
         options_.doConstantFolding = constantFolding;
         
-        // node.isConditionConstant = varInfo->isConstant;
-        // node.conditionValue      = varInfo->isConstant && (varInfo->constValue == "1");
+        node.isConditionConstant = varInfo->isConstant;
+        node.conditionValue      = varInfo->constValue == "1"; // if "1" -> enters the loop because first varinfo is constant and constant folding says its true. False if "0" -> never enters the loop
 
-        node.isConditionConstant = false;
-        node.conditionValue      = false;
+        node.isFirstCheckConstant = enterVarInfo->isConstant;
+        node.firstCheckConstValue = enterVarInfo->constValue == "1";
         
         node.isAnalyzed = true;
     }
@@ -493,14 +502,19 @@ void analyzeCommand(const CommandNode& node) {
         return DataType::UNKNOWN;
     }
 
-    void invalidateVarsInNode(ASTNode* node) {
+    void foreDynamicVarsInNode(ASTNode* node) {
         if (!node) return;
 
         // If declaration (int y = ...), mark as non-constant
-        else if (auto decl = dynamic_cast<VarDeclNode*>(node)) {
+        if (auto decl = dynamic_cast<VarDeclNode*>(node)) {
             //std::cout << "Analyzer: Invalidate variable " << decl->name.value.value() << " as non-constant due to being in while loop body\n";
             //std::cout << "Analyzer: Variable " << decl->name.value.value() << " is now non-constant\n";
-            invalidateVarsInNode(decl->value.get());
+            foreDynamicVarsInNode(decl->value.get());
+        }
+        else if (auto assign = dynamic_cast<VarAssignNode*>(node)) {
+            //std::cout << "Analyzer: Invalidate variable " << decl->name.value.value() << " as non-constant due to being in while loop body\n";
+            //std::cout << "Analyzer: Variable " << decl->name.value.value() << " is now non-constant\n";
+            foreDynamicVarsInNode(assign->value.get());
         }
         else if (auto expr = dynamic_cast<ExprNode*>(node)) {
             // its double check is the TokenType is IDENT, another check is in analyzeExpr
@@ -509,12 +523,12 @@ void analyzeCommand(const CommandNode& node) {
             }
         }
         else if (auto bin = dynamic_cast<BinaryOpNode*>(node)) {
-            invalidateVarsInNode(bin->left.get());
-            invalidateVarsInNode(bin->right.get());
+            foreDynamicVarsInNode(bin->left.get());
+            foreDynamicVarsInNode(bin->right.get());
         }
         // If it is scope, do recursive invalidation for all statements
         else if (auto scope = dynamic_cast<ScopeNode*>(node)) {
-            for (auto& stmt : scope->statements) invalidateVarsInNode(stmt.get());
+            for (auto& stmt : scope->statements) foreDynamicVarsInNode(stmt.get());
         }
     }
 

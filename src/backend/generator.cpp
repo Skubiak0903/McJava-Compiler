@@ -191,7 +191,7 @@ private:
         // but we still arent using the x variable
         // 
         // NOTE: it doest work when expression folding is disabled
-        if (node.varInfo->isConstant && node.varInfo->isUsed && options_.doConstantFolding && !isExternal && options_.removeUnusedVars) { // we dont need to add node.varInfo->isUsed -> all unused were remove above
+        if (node.initValIsConst && node.varInfo->isUsed && options_.doConstantFolding && !isExternal && options_.removeUnusedVars && node.varInfo->isConstant) { // we dont need to add node.varInfo->isUsed -> all unused were remove above
             return;
         }
 
@@ -208,8 +208,8 @@ private:
             output << "#Debug: External variable " << varName << "\n";
             output << "execute store success score " << "%e" << " " << node.varInfo->storageIdent << " run scoreboard players get " << varName << " " << node.varInfo->storageIdent << "\n";
             
-            if (!node.varInfo->constValue.empty()) {
-                output << "execute if score %e " << node.varInfo->storageIdent << " matches 0 run scoreboard players set " << varName << " " << node.varInfo->storageIdent << " " << node.varInfo->constValue << "\n";
+            if (node.initValIsConst) {
+                output << "execute if score %e " << node.varInfo->storageIdent << " matches 0 run scoreboard players set " << varName << " " << node.varInfo->storageIdent << " " << node.initValConstValue << "\n";
             } else {
                 VarInfo tempVar = *visit(*node.value);
 
@@ -221,14 +221,14 @@ private:
        
 
        
-        if (node.varInfo->isConstant) {
-            output << "#Debug: Constant var\n";            std::string isConst = node.varInfo->isConstant ? ", [CONST: " + node.varInfo->constValue + "]" : ", [NON-CONST]";
+        if (node.initValIsConst) {
+            output << "#Debug: Constant var [CONST: " + node.initValConstValue + "]\n";
 
-            output << "scoreboard players set " << varName << " " << node.varInfo->storageIdent << " " << node.varInfo->constValue << "\n";
+            output << "scoreboard players set " << varName << " " << node.varInfo->storageIdent << " " << node.initValConstValue << "\n";
         } else {
             VarInfo tempVar = *visit(*node.value);
 
-            output << "#Debug: Dynamic var \n";
+            output << "#Debug: Dynamic var\n";
             output << "scoreboard players operation " << varName << " " << node.varInfo->storageIdent << " = " << tempVar.storagePath << " " << tempVar.storageIdent << "\n";
         }
     }
@@ -239,19 +239,7 @@ private:
             return;
         }
 
-        // if its used but its constant then also dont emit it
-        // example:
-        //   x = 10
-        //   say x
-        // 
-        // it would be compiled to:
-        //   scoreboard players set x mcjava_sb_scope_0 10
-        //   tellraw @a [{"text":"10"},]
-        // 
-        // but we still arent using the x variable
-        // 
-        // NOTE: it doest work when expression folding is disabled
-        if (node.varInfo->isConstant && node.varInfo->isUsed && options_.doConstantFolding && options_.removeUnusedVars) { // we dont need to add node.varInfo->isUsed -> all unused were remove above
+        if (node.initValIsConst && node.varInfo->isUsed && options_.doConstantFolding && options_.removeUnusedVars && node.varInfo->isConstant) { // we dont need to add node.varInfo->isUsed -> all unused were remove above
             return;
         }
 
@@ -261,10 +249,10 @@ private:
         auto& output = getCurrentOutput();
        
        
-        if (node.varInfo->isConstant) {
-            output << "#Debug: Constant var\n";            std::string isConst = node.varInfo->isConstant ? ", [CONST: " + node.varInfo->constValue + "]" : ", [NON-CONST]";
+        if (node.initValIsConst) {
+            output << "#Debug: Constant var [CONST: " + node.initValConstValue + "]\n";
 
-            output << "scoreboard players set " << varName << " " << node.varInfo->storageIdent << " " << node.varInfo->constValue << "\n";
+            output << "scoreboard players set " << varName << " " << node.varInfo->storageIdent << " " << node.initValConstValue << "\n";
         } else {
             VarInfo tempVar = *visit(*node.value);
 
@@ -684,7 +672,7 @@ private:
     void generateWhile(const WhileNode& node) {
         // check if the loop will even start
         // NOTE: if we would want to implement debug mode or debbuger we need to let this pass so the loop body will be generated
-        if (node.isConditionConstant && node.conditionValue == false) return;
+        if (node.isFirstCheckConstant && node.firstCheckConstValue == false) return;
 
         // loop scope
         enterScope();
@@ -705,8 +693,22 @@ private:
         // first check to enter the loop
         auto& mainOutput = getCurrentOutput();
         mainOutput << "# Check condition to enter the loop\n";
-        mainOutput << prepareWhileCondition(node, scopeName);
+        mainOutput << prepareWhileEnterCondition(node, scopeName);
         
+    }
+
+    std::string prepareWhileEnterCondition(const WhileNode& node, const std::string scopeName) {
+        if (node.isFirstCheckConstant) {
+            // static condition check -> always the same
+            if (node.firstCheckConstValue == true) {
+                return "function " + functionNamespace_ + scopeName + "\n";
+            }
+        } else {
+            // generate condition and then check
+            VarInfo conditionVar = *visit(*node.condition);        
+            return "execute if score " + conditionVar.storagePath + " " + conditionVar.storageIdent + " matches 1 run function " + functionNamespace_ + scopeName + "\n";
+        }
+        return "";
     }
 
     std::string prepareWhileCondition(const WhileNode& node, const std::string scopeName) {

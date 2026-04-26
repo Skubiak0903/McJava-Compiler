@@ -1,0 +1,22 @@
+var x = 5;
+
+while (x > 0) {
+    x = x - 1;
+}
+
+say x
+
+if (x != 0) {
+    say "WRONG, x should be 0, but it is " x;
+}
+
+// check if constant folding works after
+var y = 15
+y = y - 1
+if (y < 10) {
+    say 10 - y
+} else if (y < 15) {
+    say 15 - y;
+} else {
+    say y
+}
