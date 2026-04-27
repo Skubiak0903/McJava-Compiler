@@ -10,10 +10,10 @@
 class Options;
 class ASTNode;
 
-class Analyzer {
+class PreAnalyzer {
 public:
-    Analyzer(Options& options, std::vector<std::shared_ptr<Scope>> allScopes_);
-    ~Analyzer();
+    PreAnalyzer(Options& options);
+    ~PreAnalyzer();
 
     void analyze(ASTNode& node);
     std::vector<std::shared_ptr<Scope>> getScopes() const;

@@ -87,7 +87,7 @@ private:
             node = parseVarDecl();
         }
 
-        // 1.1. Variable assignment (x = 5)
+        // 1.1 Variable assignment (x = 5)
         if (tok.type == TokenType::IDENT && peek(1).type == TokenType::EQUALS) {
             node = parseVarAssigment();
         }
@@ -95,6 +95,16 @@ private:
         // 2. Minecraft command (say "hello")
         else if (tok.type == TokenType::CMD_KEY) {
             node = parseCommand();
+        }
+
+        // 2.1 function declarations (fun test() {})
+        else if (tok.type == TokenType::FUN && peek(1).type == TokenType::FUNCTION_CALL) {
+            node = parseFuncDecl();
+        }
+
+        // 2.2 function declarations ( test() )
+        else if (tok.type == TokenType::FUNCTION_CALL) {
+            node = parseFuncCall();
         }
 
         // 3. If statement
@@ -247,6 +257,28 @@ private:
         consume(); // consume '}'
 
         return scope;
+    }
+
+
+
+    std::unique_ptr<ASTNode> parseFuncDecl() {
+        consume(); // consume 'fun'
+        Token funcCall = consume();
+        
+        auto body = parseStatement();
+
+        return std::make_unique<FuncDeclNode>(
+            funcCall,
+            std::move(body)
+        );
+    }
+
+    std::unique_ptr<ASTNode> parseFuncCall() {
+        Token funcCall = consume();
+
+        return std::make_unique<FuncCallNode>(
+            funcCall
+        );
     }
 
 

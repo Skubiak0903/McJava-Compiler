@@ -22,10 +22,10 @@ enum class TokenType {
     SEMI_COLON, COMMA, DOT,
     
     // Keywords
-    WHILE, FOR, IF, ELSE, RETURN, TRUE, FALSE, VAR,
+    WHILE, FOR, IF, ELSE, RETURN, TRUE, FALSE, VAR, FUN,
     
     // Dynamic
-    IDENT, CMD_KEY, ANNOTATION,
+    IDENT, CMD_KEY, ANNOTATION, FUNCTION_CALL,
     
     // Special
     NEW_LINE, END_OF_FILE,
@@ -74,11 +74,13 @@ const inline std::string tokenTypeToString(const TokenType type) {
         case TokenType::TRUE    : return "true";
         case TokenType::FALSE   : return "false";
         case TokenType::VAR     : return "var";
+        case TokenType::FUN     : return "fun";
 
         // Dynamic
-        case TokenType::IDENT       : return "IDENTIFIER";
-        case TokenType::CMD_KEY     : return "COMMAND_KEY";
-        case TokenType::ANNOTATION  : return "ANNOTATION";
+        case TokenType::IDENT         : return "IDENTIFIER";
+        case TokenType::CMD_KEY       : return "COMMAND_KEY";
+        case TokenType::ANNOTATION    : return "ANNOTATION";
+        case TokenType::FUNCTION_CALL : return "FUNCTION_CALL";
         
         // Special
         case TokenType::NEW_LINE    : return "NEW_LINE";

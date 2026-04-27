@@ -124,6 +124,16 @@ public:
         return nullptr;
     }
 
+    ASTReturn visitFuncDecl(const FuncDeclNode& node) override {
+        generateFuncDecl(node);
+        return nullptr;
+    }
+
+    ASTReturn visitFuncCall(const FuncCallNode& node) override {
+        generateFuncCall(node);
+        return nullptr;
+    }
+
 
 private:
     void generateCommand(const CommandNode& node) {
@@ -284,7 +294,7 @@ private:
 
         // retrive variable -> variable exists because analyzer checked it
         //auto varInfo = variables_.at(node.token.value.value());
-        auto varInfo = getCurrentScope().lookup(tokValue);
+        auto varInfo = getCurrentScope().lookupVar(tokValue);
 
         // can be wrong but we dont need to emits anything becouse we are only copying this value, and
         // the binary operation copy values that they change by themselves
@@ -724,6 +734,40 @@ private:
         }
         
         exitScope();
+    }
+
+    void generateFuncDecl(const FuncDeclNode& node) {
+        std::string funcName = node.name.value.value();
+        auto funcInfo = getCurrentScope().lookupFunc(funcName);
+
+        if (!funcInfo->isUsed) return;
+
+        // function scope
+        enterScope();
+
+        // set scope name to: function_#
+        getCurrentScope().name = funcInfo->scopeName;
+        std::string fileName = funcInfo->scopeName + ".mcfunction";
+        getCurrentScope().path = (path_ / fileName);
+
+        
+        // function body
+        auto& funcOutput = getCurrentOutput();
+        funcOutput << "# Function body " << funcName << "\n";
+        appendBranch(node.body.get());
+
+        exitScope();
+    }
+
+    void generateFuncCall(const FuncCallNode& node) {
+        std::string funcName = node.name.value.value();
+        auto funcInfo = getCurrentScope().lookupFunc(funcName);
+
+        auto& funcOutput = getCurrentOutput();
+
+        // function call
+        funcOutput << "# call function " << funcInfo->name << "\n";
+        funcOutput << "function " + functionNamespace_ + funcInfo->scopeName + "\n";
     }
 
     

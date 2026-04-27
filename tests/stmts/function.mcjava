@@ -1,0 +1,29 @@
+var x = 0;
+
+inc()
+inc()
+inc()
+inc2()
+
+say x
+
+fun inc() {
+    x = x + 1;
+}
+
+
+fun inc2() {
+    var localY = 5;
+
+    fun a() {
+        x = x + localY;
+    }
+    fun b() {
+        x = x - 2;
+    }
+    
+    a();
+    b();
+    b();
+
+}

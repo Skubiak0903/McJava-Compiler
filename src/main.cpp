@@ -9,6 +9,7 @@
 
 #include "./frontend/tokenizer.hpp"
 #include "./frontend/parser.hpp"
+#include "./middleend/preAnalyzer.hpp"
 #include "./middleend/analyzer.hpp"
 #include "./backend/debug_generator.hpp"
 #include "./backend/generator.hpp"
@@ -188,9 +189,23 @@ int main(int argc, char* argv[])
     // end of parsing time measurement
     clock_t tEndPar = clock();
 
-    Analyzer analyzer(options);
+    PreAnalyzer preAnalyzer(options);
+    preAnalyzer.analyze(*ast);
+
+    Analyzer analyzer(options, preAnalyzer.getScopes());
     analyzer.analyze(*ast);
     const auto scopes = analyzer.getScopes();
+
+    // bool missing = false;
+    // for (const auto& scope : scopes) {
+    //     if (scope->pendingFunctions.empty()) continue;
+    //     missing = true;
+
+    //     for (const auto& name : scope->pendingFunctions) {
+    //         std::cerr << "Missing function declaration '" << name << "'\n";
+    //     }
+    // }
+    // if (missing) exit(EXIT_FAILURE);
 
     if (options.dumpAnalyzerTree) {
         std::ofstream file(filename + "-analyzer-tree.dump", std::ios::out);

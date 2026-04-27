@@ -4,13 +4,16 @@
 #include <string>
 #include <sstream>
 #include <unordered_map>
+#include <unordered_set>
 #include <filesystem>
 #include <memory>
+#include <algorithm>
 
 //temp
-#include <iostream>
+//#include <iostream>
 
 #include "./varInfo.hpp"
+#include "./funcInfo.hpp"
 
 namespace fs = std::filesystem;
 
@@ -18,6 +21,7 @@ struct Scope {
     size_t id;
     std::string name;
     std::unordered_map<std::string, std::shared_ptr<VarInfo>> variables = {};
+    std::unordered_map<std::string, std::shared_ptr<FuncInfo>> functions = {};
     std::shared_ptr<Scope> parent;
 
     // generator stuff
@@ -25,10 +29,13 @@ struct Scope {
     std::stringstream output = std::stringstream();
 
 
-    // functions
+    /*
+        VARIABLES
+    */
+
     // True if declared, false otherwise
-    bool declare(const std::string& name, const std::shared_ptr<VarInfo>& varInfo) {
-        if (lookupLocal(name) != nullptr) return false;
+    bool declareVar(const std::string& name, const std::shared_ptr<VarInfo>& varInfo) {
+        if (lookupLocalVar(name) != nullptr) return false;
         
         // declare new variable in this scope 
         variables[name] = varInfo;
@@ -37,48 +44,71 @@ struct Scope {
 
 
     // TRUE if updated, false otherwise
-    bool assign(const std::string& name, const std::shared_ptr<VarInfo>& varInfo) {
-        return update(name, varInfo);
+    bool assignVar(const std::string& name, const std::shared_ptr<VarInfo>& varInfo) {
+        return updateVar(name, varInfo);
     }
 
 
     // returns if variable was updated successfully
-    bool update(const std::string& name, std::shared_ptr<VarInfo> newPtr) {
+    bool updateVar(const std::string& name, std::shared_ptr<VarInfo> newPtr) {
         // We are looking for map that contains this variable
         if (variables.count(name) > 0) {
-            // *existing = *varInfo;
             variables[name] = newPtr; // replace with new pointer, instead of copying whole object
             return true;
         } else if (parent) {
-            return parent->update(name, newPtr);
+            return parent->updateVar(name, newPtr);
         }
         return false; // variable not found in any scope
     }
 
     // recursive lookup
-    std::shared_ptr<VarInfo> lookup(const std::string& name) {
-        //std::cout << "Looking up variable '" << name << "' in scope '" << this->name << "'\n";
-        // auto it = variables.find(name);
-        // if (it != variables.end()) {
-        //     //std::cout << "Found variable '" << name << "' in scope '" << this->name << "'\n";
-        //     return it->second;
-        // }
-
-        auto local = lookupLocal(name);
+    std::shared_ptr<VarInfo> lookupVar(const std::string& name) {
+        auto local = lookupLocalVar(name);
         if (local != nullptr) return local;
 
         if (parent != nullptr) {
-            //std::cout << "Variable '" << name << "' not found in scope '" << this->name << "'. Looking up in parent scope...\n";
-            return parent->lookup(name);
+            return parent->lookupVar(name);
         }
-        //std::cout << "Variable '" << name << "' not found in any scope.\n";
         return nullptr;
     }
 
     // local lookup
-    std::shared_ptr<VarInfo> lookupLocal(const std::string& name) {
+    std::shared_ptr<VarInfo> lookupLocalVar(const std::string& name) {
         auto it = variables.find(name);
         if (it != variables.end()) {
+            return it->second;
+        }
+        return nullptr;
+    }
+
+    /*
+        FUNCTIONS
+    */
+
+    // True if declared, false otherwise
+    bool declareFunc(const std::string& name, const std::shared_ptr<FuncInfo>& funcInfo) {
+        if (lookupLocalFunc(name) != nullptr) return false;
+        
+        // declare new function in this scope 
+        functions[name] = funcInfo;
+        return true;
+    }
+
+    // recursive lookup
+    std::shared_ptr<FuncInfo> lookupFunc(const std::string& name) {
+        auto local = lookupLocalFunc(name);
+        if (local != nullptr) return local;
+
+        if (parent != nullptr) {
+            return parent->lookupFunc(name);
+        }
+        return nullptr;
+    }
+
+    // local lookup, true found, false otherwise
+    std::shared_ptr<FuncInfo> lookupLocalFunc(const std::string& name) {
+        auto it = functions.find(name);
+        if (it != functions.end()) {
             return it->second;
         }
         return nullptr;

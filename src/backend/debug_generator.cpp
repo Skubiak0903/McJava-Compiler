@@ -198,6 +198,39 @@ public:
         return done();
     }
 
+    ASTReturn visitFuncDecl(const FuncDeclNode& node) override {
+        printAnnotations(node);
+
+        std::string name = node.name.value.value();
+
+        indent();
+        output_ << "FuncDecl " << name << "() {\n";
+
+        indent_++;
+        visit(*node.body);
+        indent_--;
+
+        indent();
+        output_ << "}\n";
+
+        output_ << "\n";
+
+        return done();
+    }
+
+    ASTReturn visitFuncCall(const FuncCallNode& node) override {
+        printAnnotations(node);
+
+        std::string name = node.name.value.value();
+        
+        indent();
+        output_ << "FuncCall " << name << "()\n";
+
+        output_ << "\n";
+
+        return done();
+    }
+
 };
 
 // ========== WRAPPER ==========

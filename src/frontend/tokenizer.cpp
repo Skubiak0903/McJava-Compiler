@@ -19,6 +19,7 @@ const inline std::unordered_map<std::string, TokenType> KEYWORDS = {
     {"true", TokenType::TRUE},
     {"false", TokenType::FALSE},
     {"var", TokenType::VAR},
+    {"fun", TokenType::FUN},
 };
 
 const inline std::unordered_map<char, TokenType> CHARS = {
@@ -92,18 +93,47 @@ public:
             // keywords & idents
             if (std::isalpha(value)) {
                 size_t start_line = line, start_col = col;
+                
+                bool isFunctionCall = false;
 
                 buf.push_back(consume());
                 while (peek().has_value() &&
-                    (std::isalnum(peek().value()) || peek().value() == '_' || peek().value() == '-')) {
-                    buf.push_back(consume());
+                    (std::isalnum(peek().value()) || peek().value() == '_' || peek().value() == '-' || 
+                     peek().value() == '(')) {
+
+                    if (peek().value() == '(') {
+                        consume(); // consume '(';
+                        while(peek().has_value() && (std::isalnum(peek().value()) || peek().value() == '_' || peek().value() == '-')) {
+                            //buf.push_back(consume());
+                            consume(); // skip all arguments for now
+                        }
+
+                        auto closeParen = consume(); // ')'
+                        if (closeParen != ')') {
+                            std::cerr << "Expected ')' after function call, at line " << line << ", column " << col << std::endl;
+                            exit(EXIT_FAILURE);
+                        }
+
+                        isFunctionCall = true;
+                        break;
+                    } else {
+                        buf.push_back(consume());
+                    }
                 }
+
+
+                if (isFunctionCall) {
+                    tokens.push_back({.type = TokenType::FUNCTION_CALL, .value = buf, .line = start_line, .col = start_col });
+                    buf.clear();
+                    continue;
+                }
+
 
                 // check if word is keyword
                 auto it = KEYWORDS.find(buf);
                 if (it != KEYWORDS.end()) {
                     tokens.push_back({ .type = it->second, .line = start_line, .col = start_col });
-                    
+
                     buf.clear();
                     continue;
                 }

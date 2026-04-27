@@ -167,3 +167,31 @@ public:
         return visitor.visitScope(*this);
     }
 };
+
+
+
+
+class FuncDeclNode : public ASTNode {
+public:
+    Token name;
+    std::unique_ptr<ASTNode> body;
+    
+    FuncDeclNode(Token name, std::unique_ptr<ASTNode> body)
+        : name(std::move(name)), body(std::move(body)) {}
+    
+    ASTReturn accept(ASTVisitor& visitor) const override {
+        return visitor.visitFuncDecl(*this);
+    }
+};
+
+class FuncCallNode : public ASTNode {
+public:
+    Token name;
+    
+    FuncCallNode(Token name)
+        : name(std::move(name)) {}
+    
+    ASTReturn accept(ASTVisitor& visitor) const override {
+        return visitor.visitFuncCall(*this);
+    }
+};

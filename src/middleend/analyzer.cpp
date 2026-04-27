@@ -8,8 +8,8 @@
 
 class Analyzer::Impl : public ASTVisitor {
 public:
-    Impl(Options& options) : 
-        options_(options) {}
+    Impl(Options& options, std::vector<std::shared_ptr<Scope>> allScopes_) : 
+        options_(options), allScopes_(std::move(allScopes_)) {}
 
     void analyze(ASTNode& node) {
         node.accept(*this);
@@ -53,18 +53,29 @@ public:
         return nullptr;
     }
 
+    ASTReturn visitFuncDecl(const FuncDeclNode& node) override {
+        analyzeFuncDecl(node);
+        return nullptr;
+    }
+
+    ASTReturn visitFuncCall(const FuncCallNode& node) override {
+        analyzeFuncCall(node);
+        return nullptr;
+    }
+
     auto getScopes() {
         return allScopes_;
     }
 
 private:
-    //std::unordered_map<std::string, std::shared_ptr<VarInfo>> variables_;
+    Options& options_;
+    
     std::vector<std::shared_ptr<Scope>> allScopes_;
     std::vector<std::shared_ptr<Scope>> scopeStack_;
-    size_t nextScopeId_ = 0;
+    // size_t nextScopeId_ = 0;
+    size_t nextScopeIdx = 0;
 
     size_t tempVarCount_ = 0;
-    Options& options_;
 
     Scope& getCurrentScope() {
         if (scopeStack_.empty()) error("Tried to access empty scope stack");
@@ -82,7 +93,7 @@ private:
     }
 
 
-    void enterScope() {
+    /*void enterScope() {
         auto newScope = std::make_shared<Scope>();
 
         newScope->id = nextScopeId_++;
@@ -91,6 +102,12 @@ private:
 
         allScopes_.push_back(newScope);
         scopeStack_.push_back(newScope);
+    }*/
+
+    void enterScope() {
+        auto existingScope = allScopes_.at(nextScopeIdx++);
+        
+        scopeStack_.push_back(existingScope);
     }
 
     void exitScope() {
@@ -156,7 +173,7 @@ void analyzeCommand(const CommandNode& node) {
         // getCurrentScope().declare(varName, varInfo);
 
         // declare variable in this scope
-        bool declared = getCurrentScope().declare(varName, varInfo);
+        bool declared = getCurrentScope().declareVar(varName, varInfo);
         if (!declared) {
             error("VarDecl Error: Variable '" + varName + "' cannot be declared, as it exists already in current Scope.");
         }
@@ -180,7 +197,7 @@ void analyzeCommand(const CommandNode& node) {
             error("VarAssign Error: Could not infer type of variable " + varName);
         }
 
-        auto lookupVar = getCurrentScope().lookup(varName);
+        auto lookupVar = getCurrentScope().lookupVar(varName);
         if (!lookupVar) {
             error("VarAssign Error: Variable '" + varName + "' doesn't exists.");
         }
@@ -206,7 +223,7 @@ void analyzeCommand(const CommandNode& node) {
         auto varInfo = std::make_shared<VarInfo>(varData);
 
         // checked earlier, with lookup
-        getCurrentScope().assign(varName, varInfo);
+        getCurrentScope().assignVar(varName, varInfo);
 
         node.varInfo = varInfo;
         node.isAnalyzed = true;
@@ -224,7 +241,7 @@ void analyzeCommand(const CommandNode& node) {
             // if ident then tokValue = varName
 
             // check if variable exists
-            auto varInfo = getCurrentScope().lookup(tokValue);
+            auto varInfo = getCurrentScope().lookupVar(tokValue);
             if (!varInfo) {
                 error("Tried to use unassigned variable " + tokValue);
                 return nullptr;
@@ -469,6 +486,41 @@ void analyzeCommand(const CommandNode& node) {
         node.isAnalyzed = true;
     }
 
+    void analyzeFuncDecl(const FuncDeclNode& node) {
+        // disable constant folding for functions for now.
+        bool constantFolding = options_.doConstantFolding;
+        options_.doConstantFolding = false;
+        
+        // invalidate variables in body, and analyze it.
+        foreDynamicVarsInNode(node.body.get());
+        visit(*node.body);
+
+        options_.doConstantFolding = constantFolding;
+        
+
+        // function predeclared in preAnalyzer !!!
+
+        // remove pending function
+        //getCurrentScope().removePendingFunc(funcName);
+
+        node.isAnalyzed = true;
+    }
+
+    void analyzeFuncCall(const FuncCallNode& node) {
+        // check if function exists
+        auto funcName = node.name.value.value();
+        auto funcInfo = getCurrentScope().lookupFunc(funcName);
+
+        if (funcInfo == nullptr) {
+            //getCurrentScope().addPendingFunc(funcName);
+            error("Function '" + funcName + "' doesn't exist!");
+        }
+
+        funcInfo->isUsed = true;
+        
+        node.isAnalyzed = true;
+    }
+
 
     // DataType helper
     DataType inferBinaryOpType(TokenType op, DataType leftType, DataType rightType) {
@@ -543,8 +595,8 @@ private:
 
 
 // ========== WRAPPER ==========
-Analyzer::Analyzer(Options& options)
-    : pImpl(std::make_unique<Impl>(options)) {}
+Analyzer::Analyzer(Options& options, std::vector<std::shared_ptr<Scope>> allScopes_)
+    : pImpl(std::make_unique<Impl>(options, allScopes_)) {}
 
 Analyzer::~Analyzer() = default; // Needed for unique_ptr<Impl>
 
