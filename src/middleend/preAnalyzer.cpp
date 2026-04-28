@@ -65,33 +65,35 @@ public:
         return nullptr;
     }
 
-    auto getScopes() {
-        return allScopes_;
-    }
-
 private:
-    std::vector<std::shared_ptr<Scope>> allScopes_;
+    //std::vector<std::shared_ptr<Scope>> allScopes_;
     std::vector<std::shared_ptr<Scope>> scopeStack_;
-    size_t nextScopeId_ = 0;
+    // size_t nextScopeId_ = 0; in scope.hpp
 
     size_t nextFunctionId_ = 0;
     
     Options& options_;
 
-    Scope& getCurrentScope() {
+    /*Scope& getCurrentScope() {
         if (scopeStack_.empty()) error("Tried to access empty scope stack");
         return *scopeStack_.back();
+    }*/
+
+    std::shared_ptr<Scope> getCurrentScope() {
+        if (scopeStack_.empty()) error("Tried to access empty scope stack");
+        return scopeStack_.back();
     }
 
 
     void enterScope() {
         auto newScope = std::make_shared<Scope>();
 
-        newScope->id = nextScopeId_++;
+        newScope->id = nextScopeId++;
         newScope->name = "scope_" + std::to_string(newScope->id);
         newScope->parent = scopeStack_.empty() ? nullptr : scopeStack_.back();
+        newScope->isRoot = false;
 
-        allScopes_.push_back(newScope);
+        //allScopes_.push_back(newScope);
         scopeStack_.push_back(newScope);
     }
 
@@ -103,66 +105,100 @@ private:
     inline std::shared_ptr<VarInfo> visit(ASTNode& node) { return node.visit<std::shared_ptr<VarInfo>>(*this); }
 
     void analyzeCommand(const CommandNode& node) {
+        node.scope = getCurrentScope();
         for (const auto& arg : node.args) {
             visit(*arg); // Analyze all expressions
         }
     }
 
     void analyzeVarDecl(const VarDeclNode& node) {
+        node.scope = getCurrentScope();
         visit(*node.value);
     }
 
     void analyzeVarAssign(const VarAssignNode& node) {
+        node.scope = getCurrentScope();
         visit(*node.value);
     }
 
-    void analyzeExpr(const ExprNode& node) {}
+    void analyzeExpr(const ExprNode& node) {
+        node.scope = getCurrentScope();
+    }
 
     void analyzeBinaryOp(const BinaryOpNode& node){
+        node.scope = getCurrentScope();
         visit(*node.left);
         visit(*node.right);
     }
 
     void analyzeIf(const IfNode& node) {
+        node.scope = getCurrentScope();
         visit(*node.condition);
         visit(*node.thenBranch);
-        visit(*node.elseBranch);
+        if (node.elseBranch) visit(*node.elseBranch);
     }
 
-    void analyzeWhile(const WhileNode& node) {        
+    void analyzeWhile(const WhileNode& node) {
+        node.scope = getCurrentScope();        
         visit(*node.condition);
         visit(*node.body);
     }
 
     void analyzeScope(const ScopeNode& node) {
-        enterScope();
-        for (const auto& arg : node.statements) {
-            visit(*arg); // Analyze all nodes
+        if (scopeStack_.empty()) {
+            // root scope
+            auto rootScope = std::make_shared<Scope>();
+
+            rootScope->id = nextScopeId++;
+            rootScope->name = "rootScope";
+            rootScope->parent = nullptr;
+            rootScope->isRoot = true;
+
+            scopeStack_.push_back(rootScope);
+
+            node.scope = rootScope;
+            
+            for (const auto& arg : node.statements) {
+                visit(*arg); // Analyze all nodes
+            }
+
+        } else {
+            node.scope = getCurrentScope();
+
+            enterScope();
+            for (const auto& arg : node.statements) {
+                visit(*arg); // Analyze all nodes
+            }
+            exitScope();
         }
-        exitScope();
+
     }
 
     void analyzeFuncDecl(const FuncDeclNode& node) {
-        visit(*node.body);
-
+        node.scope = getCurrentScope();
+        
         // Predeclare functions
         auto funcName = node.name.value.value();
-
+        
         FuncInfo funcData = {
             .name = funcName,
             .scopeName = "function_" + std::to_string(nextFunctionId_++),
             .isUsed = false,
         };
-
+        
         auto funcInfo = std::make_shared<FuncInfo>(funcData);
         
-        bool declared = getCurrentScope().declareFunc(funcName, funcInfo);
+        bool declared = getCurrentScope()->declareFunc(funcName, funcInfo);
         if (!declared) {
             error("Function with name '" + funcName + "' already exists!");
         }
+
+        visit(*node.body);
     }
 
-    void analyzeFuncCall(const FuncCallNode& node) {}
+    void analyzeFuncCall(const FuncCallNode& node) {
+        node.scope = getCurrentScope();
+    }
 
 private:
     [[noreturn]] void error(const std::string& msg) {
@@ -177,10 +213,6 @@ PreAnalyzer::PreAnalyzer(Options& options)
     : pImpl(std::make_unique<Impl>(options)) {}
 
 PreAnalyzer::~PreAnalyzer() = default; // Needed for unique_ptr<Impl>
-
-std::vector<std::shared_ptr<Scope>> PreAnalyzer::getScopes() const {
-    return pImpl->getScopes();
-}
 
 void PreAnalyzer::analyze(ASTNode& node) {
     pImpl->analyze(node);

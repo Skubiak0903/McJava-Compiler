@@ -8,6 +8,7 @@
 #include "./token.hpp"
 #include "./varInfo.hpp"
 #include "./visitor.hpp"
+#include "./scope.hpp"
 
 
 struct Annotation {
@@ -29,6 +30,7 @@ public:
 
     
     // --- Semantic Data ---
+    mutable std::shared_ptr<Scope> scope;
     mutable bool isAnalyzed = false;
     std::vector<Annotation> annotations = {};
 };

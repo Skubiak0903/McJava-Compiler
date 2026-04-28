@@ -8,8 +8,8 @@
 
 class Analyzer::Impl : public ASTVisitor {
 public:
-    Impl(Options& options, std::vector<std::shared_ptr<Scope>> allScopes_) : 
-        options_(options), allScopes_(std::move(allScopes_)) {}
+    Impl(Options& options) : 
+        options_(options) {}
 
     void analyze(ASTNode& node) {
         node.accept(*this);
@@ -63,24 +63,24 @@ public:
         return nullptr;
     }
 
-    auto getScopes() {
+    /*auto getScopes() {
         return allScopes_;
-    }
+    }*/
 
 private:
     Options& options_;
     
-    std::vector<std::shared_ptr<Scope>> allScopes_;
-    std::vector<std::shared_ptr<Scope>> scopeStack_;
+    //std::vector<std::shared_ptr<Scope>> allScopes_;
+    //std::vector<std::shared_ptr<Scope>> scopeStack_;
     // size_t nextScopeId_ = 0;
-    size_t nextScopeIdx = 0;
+    //size_t nextScopeIdx = 0;
 
     size_t tempVarCount_ = 0;
 
-    Scope& getCurrentScope() {
-        if (scopeStack_.empty()) error("Tried to access empty scope stack");
-        return *scopeStack_.back();
-    }
+    // Scope& getCurrentScope() {
+    //     if (scopeStack_.empty()) error("Tried to access empty scope stack");
+    //     return *scopeStack_.back();
+    // }
 
     std::string getCurrentScoreboard() const {
         // std::string scopeName = getCurrentScope().name;
@@ -104,16 +104,16 @@ private:
         scopeStack_.push_back(newScope);
     }*/
 
-    void enterScope() {
-        auto existingScope = allScopes_.at(nextScopeIdx++);
+    // void enterScope() {
+    //     auto existingScope = allScopes_.at(nextScopeIdx++);
         
-        scopeStack_.push_back(existingScope);
-    }
+    //     scopeStack_.push_back(existingScope);
+    // }
 
-    void exitScope() {
-        if (scopeStack_.empty()) error("Tried to exit scope but scope stack is empty");
-        scopeStack_.pop_back(); 
-    }
+    // void exitScope() {
+    //     if (scopeStack_.empty()) error("Tried to exit scope but scope stack is empty");
+    //     scopeStack_.pop_back(); 
+    // }
 
     inline std::shared_ptr<VarInfo> visit(ASTNode& node) { return node.visit<std::shared_ptr<VarInfo>>(*this); }
 
@@ -173,7 +173,7 @@ void analyzeCommand(const CommandNode& node) {
         // getCurrentScope().declare(varName, varInfo);
 
         // declare variable in this scope
-        bool declared = getCurrentScope().declareVar(varName, varInfo);
+        bool declared = node.scope->declareVar(varName, varInfo);
         if (!declared) {
             error("VarDecl Error: Variable '" + varName + "' cannot be declared, as it exists already in current Scope.");
         }
@@ -197,7 +197,7 @@ void analyzeCommand(const CommandNode& node) {
             error("VarAssign Error: Could not infer type of variable " + varName);
         }
 
-        auto lookupVar = getCurrentScope().lookupVar(varName);
+        auto lookupVar = node.scope->lookupVar(varName);
         if (!lookupVar) {
             error("VarAssign Error: Variable '" + varName + "' doesn't exists.");
         }
@@ -223,7 +223,7 @@ void analyzeCommand(const CommandNode& node) {
         auto varInfo = std::make_shared<VarInfo>(varData);
 
         // checked earlier, with lookup
-        getCurrentScope().assignVar(varName, varInfo);
+        node.scope->assignVar(varName, varInfo);
 
         node.varInfo = varInfo;
         node.isAnalyzed = true;
@@ -241,7 +241,7 @@ void analyzeCommand(const CommandNode& node) {
             // if ident then tokValue = varName
 
             // check if variable exists
-            auto varInfo = getCurrentScope().lookupVar(tokValue);
+            auto varInfo = node.scope->lookupVar(tokValue);
             if (!varInfo) {
                 error("Tried to use unassigned variable " + tokValue);
                 return nullptr;
@@ -478,11 +478,11 @@ void analyzeCommand(const CommandNode& node) {
     }
 
     void analyzeScope(const ScopeNode& node) {
-        enterScope();
+        //enterScope();
         for (const auto& arg : node.statements) {
             visit(*arg); // Analyze all nodes
         }
-        exitScope();
+        //exitScope();
         node.isAnalyzed = true;
     }
 
@@ -509,7 +509,7 @@ void analyzeCommand(const CommandNode& node) {
     void analyzeFuncCall(const FuncCallNode& node) {
         // check if function exists
         auto funcName = node.name.value.value();
-        auto funcInfo = getCurrentScope().lookupFunc(funcName);
+        auto funcInfo = node.scope->lookupFunc(funcName);
 
         if (funcInfo == nullptr) {
             //getCurrentScope().addPendingFunc(funcName);
@@ -595,14 +595,16 @@ private:
 
 
 // ========== WRAPPER ==========
-Analyzer::Analyzer(Options& options, std::vector<std::shared_ptr<Scope>> allScopes_)
-    : pImpl(std::make_unique<Impl>(options, allScopes_)) {}
+// Analyzer::Analyzer(Options& options, std::vector<std::shared_ptr<Scope>> allScopes_)
+//     : pImpl(std::make_unique<Impl>(options, allScopes_)) {}
+Analyzer::Analyzer(Options& options)
+    : pImpl(std::make_unique<Impl>(options)) {}
 
 Analyzer::~Analyzer() = default; // Needed for unique_ptr<Impl>
 
-std::vector<std::shared_ptr<Scope>> Analyzer::getScopes() const {
-    return pImpl->getScopes();
-}
+// std::vector<std::shared_ptr<Scope>> Analyzer::getScopes() const {
+//     return pImpl->getScopes();
+// }
 
 void Analyzer::analyze(ASTNode& node) {
     pImpl->analyze(node);

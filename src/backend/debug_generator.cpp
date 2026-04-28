@@ -104,8 +104,9 @@ public:
             std::string tokenType = " [" + tokenTypeToString(node.token.type) + "]"; 
             std::string type = ", Type: " + dataTypeToString(node.varInfo->dataType);
             std::string isConst = (node.varInfo->isConstant && !node.forceDynamic) ? ", [CONST: " + node.varInfo->constValue + "]" : ", [NON-CONST]";
+            std::string scopeName = " [" + node.scope->name + "]";
 
-            output_ << "Expr: " << value << tokenType << type << isConst << "\n";
+            output_ << "Expr: " << value << tokenType << type << isConst << scopeName << "\n";
         } else {
             output_ << "Expr: " << node.token.value.value_or("[no value]") 
                 << " [" << tokenTypeToString(node.token.type) << "], "
@@ -143,7 +144,8 @@ public:
         
         indent();
         std::string isConst = node.isConditionConstant ? (" [CONST: " + std::to_string(node.conditionValue) + "]") : " [NON-CONST]";
-        output_ << "IfStmt" << isConst << "\n";
+        std::string scopeName = node.scope ? " [" + node.scope->name + "]" : "";
+        output_ << "IfStmt" << isConst << scopeName << "\n";
 
         indent_++;
         visit(*node.condition);
@@ -169,21 +171,22 @@ public:
         indent();
         std::string isConst = node.isConditionConstant ? (" [CONST: " + std::to_string(node.conditionValue) + "]") : " [NON-CONST]";
         output_ << "WhileLoop" << isConst << "\n";
-
+        
         indent_++;
         visit(*node.condition);
         visit(*node.body);
         indent_--;
-
+        
         output_ << "\n";
         return done();
     }
-
+    
     ASTReturn visitScope(const ScopeNode& node) override {
         printAnnotations(node);
-
+        
         indent();
-        output_ << "Scope {\n";
+        std::string scopeName = node.scope ? (" [" + node.scope->name + "]") : "";
+        output_ << "Scope " << scopeName << " {\n";
         
         indent_++;
         for (const auto& stmt : node.statements) {

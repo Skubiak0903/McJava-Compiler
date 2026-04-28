@@ -192,9 +192,10 @@ int main(int argc, char* argv[])
     PreAnalyzer preAnalyzer(options);
     preAnalyzer.analyze(*ast);
 
-    Analyzer analyzer(options, preAnalyzer.getScopes());
+    Analyzer analyzer(options);
     analyzer.analyze(*ast);
-    const auto scopes = analyzer.getScopes();
+
+    //const auto scopes = analyzer.getScopes();
 
     // bool missing = false;
     // for (const auto& scope : scopes) {
@@ -247,7 +248,7 @@ int main(int argc, char* argv[])
 
         fs::path path(filename);
         if (!options.silent) std::cout << "Path: " << path << "\n";
-        FunctionGenerator funcGen(path, options, scopes);
+        FunctionGenerator funcGen(path, options);
         funcGen.generate(*ast);
     }
     

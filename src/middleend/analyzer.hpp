@@ -12,11 +12,11 @@ class ASTNode;
 
 class Analyzer {
 public:
-    Analyzer(Options& options, std::vector<std::shared_ptr<Scope>> allScopes_);
+    Analyzer(Options& options);
     ~Analyzer();
 
     void analyze(ASTNode& node);
-    std::vector<std::shared_ptr<Scope>> getScopes() const;
+    //std::vector<std::shared_ptr<Scope>> getScopes() const;
 private:
     // PImpl - implementation hidden in .cpp
     class Impl;

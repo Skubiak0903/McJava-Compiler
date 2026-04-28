@@ -17,9 +17,11 @@
 
 namespace fs = std::filesystem;
 
+static size_t nextScopeId = 0;
 struct Scope {
     size_t id;
     std::string name;
+    bool isRoot;
     std::unordered_map<std::string, std::shared_ptr<VarInfo>> variables = {};
     std::unordered_map<std::string, std::shared_ptr<FuncInfo>> functions = {};
     std::shared_ptr<Scope> parent;

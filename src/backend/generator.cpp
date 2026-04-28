@@ -4,10 +4,12 @@
 #include <set>
 #include <iostream>
 #include <fstream>
+#include <unordered_set>
 
 #include "./../core/ast.hpp"
 #include "./../core/options.hpp"
 #include "./../core/visitor.hpp"
+#include "./../core/scope.hpp"
 
 class FunctionGenerator::Impl : public ASTVisitor {
 private:
@@ -16,67 +18,99 @@ private:
 
     const std::string functionNamespace_;
 
-    std::vector<std::shared_ptr<Scope>> allScopes_;
-    std::vector<std::shared_ptr<Scope>> scopeStack_;
-    size_t nextScopeIdx = 0;
+    std::unordered_set<std::shared_ptr<Scope>> allScopes_;
+    //std::vector<std::shared_ptr<Scope>> allScopes_;
+    //std::vector<std::shared_ptr<Scope>> scopeStack_;
+    //size_t nextScopeIdx = 0;
 
-    Scope& getCurrentScope() {
-        if (scopeStack_.empty()) error("Tried to access empty scope stack");
-        return *scopeStack_.back();
-    }
+    // Scope& getCurrentScope() {
+    //     if (scopeStack_.empty()) error("Tried to access empty scope stack");
+    //     return *scopeStack_.back();
+    // }
     
-    std::stringstream& getCurrentOutput() {
-        return getCurrentScope().output;
+    /*std::stringstream& getOutput(const ASTNode& node) {
+        return getOutput(node.scope);
     }
-    
-    // to get the next scope we can traverse the scopes by nextScopeIdx and because analyzer indexes them in the same order
-    // as we generate them we can be sure that the next scope will be the correct one for the current generated code
-    // i think this is the case, but im not sure
-    void enterScope() {
-        auto existingScope = allScopes_.at(nextScopeIdx++);
-        
-        std::string name = scopeStack_.empty() ? "start.mcfunction" : (existingScope->name + ".mcfunction");
-        existingScope->path = (path_ / name);
-        
-        scopeStack_.push_back(existingScope);
-    }
-    
-    void exitScope() {
-        Scope& scope = getCurrentScope();
 
-        // std::cout << "Exiting scope '" << scope.name << "' with path '" << scope.path << "'\n";
+    std::stringstream& getOutput(const std::shared_ptr<Scope> scope) {
+        std::cout << "Retrived output for '" << scope->name << "'\n";
+        return scope->output;
+    }*/
+
+    
+    std::shared_ptr<Scope> currentScope;
+    std::stringstream& getOutput() {
+        if (!currentScope) error("Tried to use unset currentScope!");
+        std::cout << "Retrived output for '" << currentScope->name << "'\n";
+        return currentScope->output;
+    }
+
+    std::shared_ptr<Scope> enterNewScope(const ASTNode& node) {
+        auto newScope = std::make_shared<Scope>();
+
+        newScope->id = nextScopeId++;
+        newScope->name = "scope_" + std::to_string(newScope->id);
+        newScope->parent = node.scope;
+        newScope->isRoot = false;
+
+        enterScope(newScope);
+        return newScope;
+    }
+    
+    void enterScope(const ASTNode& node) {
+        enterScope(node.scope);
+    }
+    
+    void enterScope(const std::shared_ptr<Scope> scope) {
+        if (scope == nullptr) error("Tried to enter unexisting scope of a node");
+
+        std::cout << "Entered Scope\n";
         
+        std::string name = scope->isRoot ? "start.mcfunction" : (scope->name + ".mcfunction");
+        scope->path = (path_ / name);
+        
+        allScopes_.insert(scope);
+        currentScope = scope;
+    }
+    
+    void exitScope(const ASTNode& node) {
+        exitScope(node.scope);    
+    }
+
+    void exitScope(const std::shared_ptr<Scope> scope) {
+        std::cout << "Exiting scope '" << scope->name << "' with path '" << scope->path << "'\n";
+        
+        currentScope = scope->parent; // for root it will be nullptr
+
         // nothing to generate
-        if (scope.output.str().empty()) {
-            if (!options_.silent) std::cout << "Scope '" << scope.name << "' is empty, skipping file generation.\n";
-            scopeStack_.pop_back();
+        if (scope->output.str().empty()) {
+            if (!options_.silent) std::cout << "Scope '" << scope->name << "' is empty, skipping file generation.\n";
             return;
         }
         
         // save to file
-        std::ofstream file(scope.path, std::ios::out);
+        std::ofstream file(scope->path, std::ios::out);
         if (!file.is_open()) error("Could not save function file!");
 
         // last scope (global)
-        if (scopeStack_.size() == 1) {
-            std::string body = scope.output.str();
+        if (scope->isRoot) {
+            std::string body = scope->output.str();
             std::string header = prepareScoreboards();
             
             file << header << body;
         } else {
-            file << scope.output.str();
+            file << scope->output.str();
         }
 
         file.close();
-        scopeStack_.pop_back();
     }
 
     inline std::shared_ptr<VarInfo> visit(ASTNode& node) { return node.visit<std::shared_ptr<VarInfo>>(*this); }
 
 public:
 
-    Impl(fs::path& path, Options& options, std::vector<std::shared_ptr<Scope>> scopes) 
-        : path_(path), options_(options),  functionNamespace_(options_.dpPrefix + ":" + options_.dpPath), allScopes_(std::move(scopes)) {}
+    Impl(fs::path& path, Options& options) 
+        : path_(path), options_(options),  functionNamespace_(options_.dpPrefix + ":" + options_.dpPath) {}
 
     void generate(ASTNode& node) {
         visit(node);
@@ -168,7 +202,7 @@ private:
         }
         ss << "]";
 
-        auto& output = getCurrentOutput();
+        auto& output = getOutput();
         output << ss.str() << "\n";
     }
             
@@ -200,7 +234,7 @@ private:
 
 
         std::string varName = node.varInfo->name;
-        auto& output = getCurrentOutput();
+        auto& output = getOutput();
 
         // if is external check if value exists and if not then set it to default value
         if (node.varInfo->isExternal) {
@@ -249,7 +283,7 @@ private:
 
 
         std::string varName = node.varInfo->name;
-        auto& output = getCurrentOutput();
+        auto& output = getOutput();
        
        
         if (node.initValIsConst) {
@@ -272,7 +306,7 @@ private:
         std::string tokValue = node.token.value.value(); // variable name in user code
         //std::string varName = "%" +  tokValue; // won't collide with any user defined variables
 
-        //auto& output = getCurrentOutput();
+        //auto& output = getOutput(node);
 
         // VarInfo varInfo = VarInfo{
         //     .storageType = VarStorageType::SCOREBOARD,
@@ -294,7 +328,7 @@ private:
 
         // retrive variable -> variable exists because analyzer checked it
         //auto varInfo = variables_.at(node.token.value.value());
-        auto varInfo = getCurrentScope().lookupVar(tokValue);
+        auto varInfo = node.scope->lookupVar(tokValue);
 
         // can be wrong but we dont need to emits anything becouse we are only copying this value, and
         // the binary operation copy values that they change by themselves
@@ -342,7 +376,7 @@ private:
     
     std::shared_ptr<VarInfo> generateBinaryOp(const BinaryOpNode& node) {
         //auto currentSb = getCurrentScoreboard();
-        auto& output = getCurrentOutput();
+        auto& output = getOutput();
         
         // we can generate these 2 nodes because there is at least 1 variable -> analyzer combined all 2 constants binary operators
         VarInfo leftVar  = *visit(*node.left);
@@ -574,7 +608,7 @@ private:
             ASTNode* branch     = node.conditionValue == true ? node.thenBranch.get() : node.elseBranch.get();
             std::string comment = node.conditionValue == true ? "# Static Then Body\n" : "# Static Else Body\n";
             
-            auto& mainOutput = getCurrentOutput();
+            auto& mainOutput = getOutput();
             mainOutput << comment;
             appendBranch(branch);
     
@@ -587,23 +621,22 @@ private:
         // then branch
         std::string thenComment = "# Then Body\n";
         std::string thenAdditional = "execute unless score " + conditionVar.storagePath + " " + conditionVar.storageIdent + " matches 1 run return 1\n";
-        std::string thenScopeName = generateBranch(node.thenBranch.get(), thenComment + thenAdditional);
+        auto thenScope = generateBranch(node.thenBranch.get(), thenComment + thenAdditional);
 
 
         // else scope
         std::string elseComment = "# Else Body\n";
-        std::string elseScopeName = generateBranch(node.elseBranch.get(), elseComment);
+        auto elseScope = generateBranch(node.elseBranch.get(), elseComment);
 
-        auto& mainOutput = getCurrentOutput();
+        auto& mainOutput = getOutput();
         mainOutput << "# Check condition  'if'\n";        
         // if thenScope branch returns 1 then execute else branch
-        mainOutput << "execute if function " << functionNamespace_ << thenScopeName << " run function " << functionNamespace_ << elseScopeName << "\n";
+        mainOutput << "execute if function " << functionNamespace_ << thenScope->name << " run function " << functionNamespace_ << elseScope->name << "\n";
     }
 
-    std::string generateBranch(ASTNode* body, const std::string& additionalBefore = "", const std::string& additionalAfter = "") {
-        enterScope();
-        std::string scopeName = getCurrentScope().name;
-        auto& output = getCurrentOutput();
+    std::shared_ptr<Scope> generateBranch(ASTNode* body, const std::string& additionalBefore = "", const std::string& additionalAfter = "") {
+        auto newScope = enterNewScope(*body);
+        auto& output = getOutput();
 
         output << additionalBefore;
 
@@ -611,8 +644,8 @@ private:
 
         output << additionalAfter;
         
-        exitScope();
-        return scopeName;
+        exitScope(newScope);
+        return newScope;
     }
 
     void appendBranch(ASTNode* body){
@@ -643,7 +676,7 @@ private:
             ASTNode* branch     = node.thenBranch.get();
             std::string comment = "# Static Then Body\n";
             
-            auto& mainOutput = getCurrentOutput();
+            auto& mainOutput = getOutput();
             mainOutput << comment;
             appendBranch(branch);
     
@@ -655,15 +688,15 @@ private:
 
         // then branch
         std::string comment = "# Then Body\n";
-        std::string thenScopeName = generateBranch(node.thenBranch.get(), comment);
+        auto thenScope = generateBranch(node.thenBranch.get(), comment);
         
 
-        auto& mainOutput = getCurrentOutput();
+        auto& mainOutput = getOutput();
         // first check to enter the loop
         mainOutput << "# Check condition to enter the 'then' function\n";
 
         VarInfo conditionVar = *visit(*node.condition);        
-        mainOutput << "execute if score " << conditionVar.storagePath << " " << conditionVar.storageIdent << " matches 1 run function " << functionNamespace_ << thenScopeName << "\n";
+        mainOutput << "execute if score " << conditionVar.storagePath << " " << conditionVar.storageIdent << " matches 1 run function " << functionNamespace_ << thenScope->name << "\n";
     
     }
 
@@ -673,9 +706,9 @@ private:
         if (node.isFirstCheckConstant && node.firstCheckConstValue == false) return;
 
         // loop scope
-        enterScope();
-        auto& whileOutput = getCurrentOutput();
-        std::string scopeName = getCurrentScope().name;
+        auto newScope = enterNewScope(*node.body.get());
+        auto& whileOutput = getOutput();
+        std::string scopeName = newScope->name;
 
         // loop body
         whileOutput << "# Loop Body\n";
@@ -685,11 +718,11 @@ private:
         whileOutput << "# Recheck condition at the end of the loop\n";
         whileOutput << prepareWhileCondition(node, scopeName);
 
-        exitScope();
+        exitScope(newScope);
         
         
         // first check to enter the loop
-        auto& mainOutput = getCurrentOutput();
+        auto& mainOutput = getOutput();
         mainOutput << "# Check condition to enter the loop\n";
         mainOutput << prepareWhileEnterCondition(node, scopeName);
         
@@ -715,55 +748,50 @@ private:
             if (node.conditionValue == true) {
                 return "function " + functionNamespace_ + scopeName + "\n";
             }
+            return "";
         } else {
             // generate condition and then check
             VarInfo conditionVar = *visit(*node.condition);        
             return "execute if score " + conditionVar.storagePath + " " + conditionVar.storageIdent + " matches 1 run function " + functionNamespace_ + scopeName + "\n";
         }
-        return "";
     }
 
 
 
 
     void generateScope(const ScopeNode& node) {
-        enterScope();
+        enterScope(node);
                 
         for (const auto& stmt : node.statements) {
+            std::cout << "Statement\n";
             visit(*stmt);
         }
         
-        exitScope();
+        exitScope(node);
     }
 
     void generateFuncDecl(const FuncDeclNode& node) {
         std::string funcName = node.name.value.value();
-        auto funcInfo = getCurrentScope().lookupFunc(funcName);
+        auto funcInfo = node.scope->lookupFunc(funcName);
 
         if (!funcInfo->isUsed) return;
 
         // function scope
-        enterScope();
+        auto newScope = enterNewScope(node);
 
-        // set scope name to: function_#
-        getCurrentScope().name = funcInfo->scopeName;
-        std::string fileName = funcInfo->scopeName + ".mcfunction";
-        getCurrentScope().path = (path_ / fileName);
-
-        
         // function body
-        auto& funcOutput = getCurrentOutput();
+        auto& funcOutput = getOutput();
         funcOutput << "# Function body " << funcName << "\n";
         appendBranch(node.body.get());
 
-        exitScope();
+        exitScope(newScope);
     }
 
     void generateFuncCall(const FuncCallNode& node) {
         std::string funcName = node.name.value.value();
-        auto funcInfo = getCurrentScope().lookupFunc(funcName);
+        auto funcInfo = node.scope->lookupFunc(funcName);
 
-        auto& funcOutput = getCurrentOutput();
+        auto& funcOutput = getOutput();
 
         // function call
         funcOutput << "# call function " << funcInfo->name << "\n";
@@ -799,8 +827,8 @@ private:
 };
 
 // ========== WRAPPER ==========
-FunctionGenerator::FunctionGenerator(fs::path& path, Options& options, std::vector<std::shared_ptr<Scope>> scopes)
-    : pImpl(std::make_unique<Impl>(path, options, std::move(scopes))) {}
+FunctionGenerator::FunctionGenerator(fs::path& path, Options& options)
+    : pImpl(std::make_unique<Impl>(path, options)) {}
 
 FunctionGenerator::~FunctionGenerator() = default; // Needed for unique_ptr<Impl>
 

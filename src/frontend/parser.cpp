@@ -1,9 +1,9 @@
 // frontend/parser.cpp
 #include "./parser.hpp"
 
-#include "./registries/SimplifiedCommandRegistry.hpp"
-#include "./core/token.hpp"
-#include "./core/ast.hpp"
+#include "../registries/SimplifiedCommandRegistry.hpp"
+#include "../core/token.hpp"
+#include "../core/ast.hpp"
 
 class Parser::Impl {
 public:

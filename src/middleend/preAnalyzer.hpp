@@ -16,7 +16,6 @@ public:
     ~PreAnalyzer();
 
     void analyze(ASTNode& node);
-    std::vector<std::shared_ptr<Scope>> getScopes() const;
 private:
     // PImpl - implementation hidden in .cpp
     class Impl;

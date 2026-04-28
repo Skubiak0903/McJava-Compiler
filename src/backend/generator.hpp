@@ -15,7 +15,7 @@ struct ASTNode;
 
 class FunctionGenerator {
 public:
-    FunctionGenerator(fs::path& path, Options& options, std::vector<std::shared_ptr<Scope>> variables);
+    FunctionGenerator(fs::path& path, Options& options);
     ~FunctionGenerator();
 
     void generate(ASTNode& node);
