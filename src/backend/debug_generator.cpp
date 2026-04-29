@@ -146,7 +146,7 @@ public:
         std::string isConst = node.isConditionConstant ? (" [CONST: " + std::to_string(node.conditionValue) + "]") : " [NON-CONST]";
         std::string scopeName = node.scope ? " [" + node.scope->name + "]" : "";
         output_ << "IfStmt" << isConst << scopeName << "\n";
-
+        
         indent_++;
         visit(*node.condition);
         visit(*node.thenBranch);
@@ -160,7 +160,7 @@ public:
             visit(*node.elseBranch);
             indent_--;
         }
-
+        
         output_ << "\n";
         return done();
     }
@@ -185,7 +185,7 @@ public:
         printAnnotations(node);
         
         indent();
-        std::string scopeName = node.scope ? (" [" + node.scope->name + "]") : "";
+        std::string scopeName = node.scope ? (" [Parent: " + node.scope->name + "]") : "";
         output_ << "Scope " << scopeName << " {\n";
         
         indent_++;

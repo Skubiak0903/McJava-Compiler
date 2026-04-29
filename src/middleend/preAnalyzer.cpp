@@ -134,9 +134,19 @@ private:
     void analyzeIf(const IfNode& node) {
         node.scope = getCurrentScope();
         visit(*node.condition);
-        visit(*node.thenBranch);
-        if (node.elseBranch) visit(*node.elseBranch);
+
+        visitInScope(node.thenBranch);
+        if (node.elseBranch) visitInScope(node.elseBranch);
     }
+
+    void visitInScope(const std::unique_ptr<ASTNode>& node) {
+        auto scopeNode = dynamic_cast<ScopeNode*>(node.get());
+        if (scopeNode == nullptr) enterScope();
+        
+        visit(*node);
+        if (scopeNode == nullptr) exitScope();
+    }
+
 
     void analyzeWhile(const WhileNode& node) {
         node.scope = getCurrentScope();        
@@ -163,7 +173,8 @@ private:
             }
 
         } else {
-            node.scope = getCurrentScope();
+            // prevent from overriding -> if scopes need this
+            if(node.scope == nullptr) node.scope = getCurrentScope();
 
             enterScope();
             for (const auto& arg : node.statements) {

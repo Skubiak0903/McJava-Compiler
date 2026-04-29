@@ -19,24 +19,6 @@ private:
     const std::string functionNamespace_;
 
     std::unordered_set<std::shared_ptr<Scope>> allScopes_;
-    //std::vector<std::shared_ptr<Scope>> allScopes_;
-    //std::vector<std::shared_ptr<Scope>> scopeStack_;
-    //size_t nextScopeIdx = 0;
-
-    // Scope& getCurrentScope() {
-    //     if (scopeStack_.empty()) error("Tried to access empty scope stack");
-    //     return *scopeStack_.back();
-    // }
-    
-    /*std::stringstream& getOutput(const ASTNode& node) {
-        return getOutput(node.scope);
-    }
-
-    std::stringstream& getOutput(const std::shared_ptr<Scope> scope) {
-        std::cout << "Retrived output for '" << scope->name << "'\n";
-        return scope->output;
-    }*/
-
     
     std::shared_ptr<Scope> currentScope;
     std::stringstream& getOutput() {
@@ -46,11 +28,15 @@ private:
     }
 
     std::shared_ptr<Scope> enterNewScope(const ASTNode& node) {
+        return enterNewScope(node.scope);
+    }
+
+    std::shared_ptr<Scope> enterNewScope(const std::shared_ptr<Scope> scope) {
         auto newScope = std::make_shared<Scope>();
 
         newScope->id = nextScopeId++;
         newScope->name = "scope_" + std::to_string(newScope->id);
-        newScope->parent = node.scope;
+        newScope->parent = scope;
         newScope->isRoot = false;
 
         enterScope(newScope);
@@ -64,7 +50,7 @@ private:
     void enterScope(const std::shared_ptr<Scope> scope) {
         if (scope == nullptr) error("Tried to enter unexisting scope of a node");
 
-        std::cout << "Entered Scope\n";
+        std::cout << "Entered scope '" << scope->name << "\n";
         
         std::string name = scope->isRoot ? "start.mcfunction" : (scope->name + ".mcfunction");
         scope->path = (path_ / name);
@@ -618,15 +604,17 @@ private:
         /// DYNAMIC :
         VarInfo conditionVar = *visit(*node.condition);      
 
+
         // then branch
         std::string thenComment = "# Then Body\n";
         std::string thenAdditional = "execute unless score " + conditionVar.storagePath + " " + conditionVar.storageIdent + " matches 1 run return 1\n";
         auto thenScope = generateBranch(node.thenBranch.get(), thenComment + thenAdditional);
 
-
+        
         // else scope
         std::string elseComment = "# Else Body\n";
         auto elseScope = generateBranch(node.elseBranch.get(), elseComment);
+
 
         auto& mainOutput = getOutput();
         mainOutput << "# Check condition  'if'\n";        
@@ -635,7 +623,8 @@ private:
     }
 
     std::shared_ptr<Scope> generateBranch(ASTNode* body, const std::string& additionalBefore = "", const std::string& additionalAfter = "") {
-        auto newScope = enterNewScope(*body);
+        // auto newScope = enterNewScope(*body);
+        auto newScope = enterNewScope(currentScope);
         auto& output = getOutput();
 
         output << additionalBefore;
@@ -777,7 +766,7 @@ private:
         if (!funcInfo->isUsed) return;
 
         // function scope
-        auto newScope = enterNewScope(node);
+        auto newScope = enterNewScope(currentScope);
 
         // function body
         auto& funcOutput = getOutput();
