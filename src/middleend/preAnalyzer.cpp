@@ -196,7 +196,15 @@ private:
             .scopeName = "function_" + std::to_string(nextFunctionId_++),
             .isUsed = false,
         };
-        
+
+        // special functions -> tick & load in root scope
+        if (node.scope->isRoot && (funcName == "tick" || funcName == "load")) {
+            funcData.isUsed  = true;
+            funcData.scopeName = funcName;
+        }
+
+
+
         auto funcInfo = std::make_shared<FuncInfo>(funcData);
         
         bool declared = getCurrentScope()->declareFunc(funcName, funcInfo);

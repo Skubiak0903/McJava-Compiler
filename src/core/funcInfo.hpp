@@ -11,5 +11,5 @@ struct FuncInfo {
     std::string scopeName;  
     
     // --- Additional Flags ---
-    bool isUsed;
+    bool isUsed = false;
 };

@@ -23,7 +23,7 @@ private:
     std::shared_ptr<Scope> currentScope;
     std::stringstream& getOutput() {
         if (!currentScope) error("Tried to use unset currentScope!");
-        std::cout << "Retrived output for '" << currentScope->name << "'\n";
+        //std::cout << "Retrived output for '" << currentScope->name << "'\n";
         return currentScope->output;
     }
 
@@ -31,13 +31,19 @@ private:
         return enterNewScope(node.scope);
     }
 
-    std::shared_ptr<Scope> enterNewScope(const std::shared_ptr<Scope> scope) {
+    std::shared_ptr<Scope> createNewScope(const std::shared_ptr<Scope> scope) {
         auto newScope = std::make_shared<Scope>();
 
         newScope->id = nextScopeId++;
         newScope->name = "scope_" + std::to_string(newScope->id);
         newScope->parent = scope;
         newScope->isRoot = false;
+
+        return newScope;
+    }
+
+    std::shared_ptr<Scope> enterNewScope(const std::shared_ptr<Scope> scope) {
+        auto newScope = createNewScope(scope);
 
         enterScope(newScope);
         return newScope;
@@ -50,7 +56,7 @@ private:
     void enterScope(const std::shared_ptr<Scope> scope) {
         if (scope == nullptr) error("Tried to enter unexisting scope of a node");
 
-        std::cout << "Entered scope '" << scope->name << "\n";
+        //std::cout << "Entered scope '" << scope->name << "\n";
         
         std::string name = scope->isRoot ? "start.mcfunction" : (scope->name + ".mcfunction");
         scope->path = (path_ / name);
@@ -64,7 +70,7 @@ private:
     }
 
     void exitScope(const std::shared_ptr<Scope> scope) {
-        std::cout << "Exiting scope '" << scope->name << "' with path '" << scope->path << "'\n";
+        //std::cout << "Exiting scope '" << scope->name << "' with path '" << scope->path << "'\n";
         
         currentScope = scope->parent; // for root it will be nullptr
 
@@ -752,7 +758,6 @@ private:
         enterScope(node);
                 
         for (const auto& stmt : node.statements) {
-            std::cout << "Statement\n";
             visit(*stmt);
         }
         
@@ -766,7 +771,9 @@ private:
         if (!funcInfo->isUsed) return;
 
         // function scope
-        auto newScope = enterNewScope(currentScope);
+        auto newScope = createNewScope(currentScope);
+        newScope->name = funcInfo->scopeName;
+        enterScope(newScope);
 
         // function body
         auto& funcOutput = getOutput();
